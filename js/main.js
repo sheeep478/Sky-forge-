@@ -1,15 +1,9 @@
 // SkyForge — entry point. Wires the menu, renderer, world, player, mobs,
 // input (desktop + touch), HUD and survival systems together.
 
-import * as THREE from 'three';
-import { World, CHUNK } from './world.js';
-import { Player } from './player.js';
-import { MobManager } from './mobs.js';
-import { BLOCK, BLOCK_INFO, PALETTE } from './blocks.js';
-import { hashSeed } from './noise.js';
-
-// Mark a successful engine boot so index.html's fallback banner stays hidden.
-window.__skyforgeBooted = true;
+// All game classes/constants (World, CHUNK, Player, MobManager, BLOCK,
+// BLOCK_INFO, PALETTE, hashSeed, THREE) are globals from the scripts
+// loaded before this one in index.html.
 
 // ---------------- device + DOM ----------------
 const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -52,6 +46,11 @@ const input = { mx: 0, mz: 0, jump: false, sprint: false, up: false, down: false
 let health = 20, hunger = 20, hungerTimer = 0, regenTimer = 0;
 
 function startGame() {
+  // Engine (Three.js) must be loaded by the CDN bridge first.
+  if (typeof THREE === 'undefined' || !window.THREE) {
+    document.getElementById('cdn-error').classList.remove('hidden');
+    return;
+  }
   menuEl.classList.add('hidden');
   loadingEl.classList.remove('hidden');
 

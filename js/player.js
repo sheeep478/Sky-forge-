@@ -1,14 +1,14 @@
 // First-person player: movement, AABB voxel collision, gravity, jump, fly.
 
-import * as THREE from 'three';
-import { HEIGHT } from './world.js';
+
+// HEIGHT is a global from world.js
 
 const WIDTH = 0.6;        // player box width/depth
 const TALL = 1.8;         // player height
 const EYE = 1.62;         // eye height from feet
 const HALF = WIDTH / 2;
 
-export class Player {
+class Player {
   constructor(camera, world) {
     this.camera = camera;
     this.world = world;

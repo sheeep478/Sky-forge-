@@ -1,7 +1,7 @@
 // Passive mobs: Pig, Cow, Chicken. Boxy models + simple wander AI
 // that follows the ground surface and avoids walking off into walls.
 
-import * as THREE from 'three';
+// THREE is a global provided by the engine bridge.
 
 function mat(hex) { return new THREE.MeshLambertMaterial({ color: hex }); }
 function box(w, h, d, m, x = 0, y = 0, z = 0) {
@@ -123,7 +123,7 @@ class Mob {
   dispose(scene) { scene.remove(this.obj); }
 }
 
-export class MobManager {
+class MobManager {
   constructor(world, scene) {
     this.world = world;
     this.scene = scene;

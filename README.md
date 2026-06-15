@@ -23,20 +23,26 @@ Build, mine, and explore procedurally generated blocky worlds with passive anima
 
 ## Play
 
-Because the game uses ES modules, open it through a local web server (not `file://`).
+### On a computer — just open the file
+Download/clone the repo and **double-click `index.html`** (or drag it into your
+browser). No server or build step needed.
 
+### On a phone, or to share a link
+Phones can't open local files easily, so host the folder. Two options:
+
+**A. GitHub Pages (easiest — gives a public URL):**
+In your repo on GitHub → **Settings → Pages** → set *Source* to your branch and
+`/ (root)` → save. After a minute it's live at
+`https://<you>.github.io/Sky-forge-/`, openable on any phone.
+
+**B. A quick local server** (then open it from your phone on the same Wi-Fi):
 ```bash
-# from the project root, pick any one:
-python3 -m http.server 8000
-#   …or
-npx serve .
+python3 -m http.server 8000      # or:  npx serve .
 ```
+Open `http://<your-computer-ip>:8000` on the phone.
 
-Then open **http://localhost:8000** in your browser. On a phone, open the same
-URL over your local network (e.g. `http://<your-computer-ip>:8000`).
-
-> The 3D engine (Three.js) is loaded from a CDN on first run, so the initial
-> load needs an internet connection.
+> The 3D engine (Three.js) is downloaded from a CDN on first run, so the very
+> first load needs an internet connection. If it's blocked you'll see a notice.
 
 ## Controls
 

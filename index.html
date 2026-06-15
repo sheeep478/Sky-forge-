@@ -8,13 +8,6 @@
   <meta name="theme-color" content="#7ec0ee" />
   <title>SkyForge — A Voxel Sandbox</title>
   <link rel="stylesheet" href="css/style.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js"
-    }
-  }
-  </script>
 </head>
 <body>
   <!-- ===================== MAIN MENU ===================== -->
@@ -116,19 +109,30 @@
   </div>
 
   <script>
-    // If the module engine fails to import (e.g. CDN blocked), surface a message.
-    window.__skyforgeBooted = false;
-    window.addEventListener('error', (e) => {
-      if (e && (e.message || '').toString().match(/import|module|three/i) && !window.__skyforgeBooted) {
-        document.getElementById('cdn-error').classList.remove('hidden');
-      }
-    });
-    setTimeout(() => {
-      if (!window.__skyforgeBooted) {
-        document.getElementById('cdn-error').classList.remove('hidden');
-      }
-    }, 6000);
+    // Surface a message if the engine can't be downloaded from the CDN.
+    function skyforgeShowCdnError() {
+      var el = document.getElementById('cdn-error');
+      if (el) el.classList.remove('hidden');
+    }
+    window.__threeReady = false;
+    setTimeout(function () { if (!window.__threeReady) skyforgeShowCdnError(); }, 9000);
   </script>
-  <script type="module" src="js/main.js"></script>
+
+  <!-- Engine bridge: load Three.js (ES module) from the CDN and expose it
+       as a global so the plain game scripts below can use it. Plain scripts
+       work from file:// (double-click) as well as any web server. -->
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js';
+    window.THREE = THREE;
+    window.__threeReady = true;
+  </script>
+
+  <!-- Game code (classic scripts, load order matters) -->
+  <script src="js/noise.js"></script>
+  <script src="js/blocks.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/mobs.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>

@@ -1,10 +1,10 @@
 // Block definitions and procedural texture-atlas generation.
 // Each block can have distinct top / side / bottom textures.
 
-import * as THREE from 'three';
+// (THREE is provided globally by the engine bridge in index.html.)
 
 // Block IDs. 0 is always AIR.
-export const BLOCK = {
+const BLOCK = {
   AIR: 0,
   GRASS: 1,
   DIRT: 2,
@@ -119,7 +119,7 @@ const FACES = {
 };
 
 // Block metadata used by gameplay / rendering.
-export const BLOCK_INFO = {
+const BLOCK_INFO = {
   [BLOCK.GRASS]:  { name: 'Grass',   solid: true,  color: '#5fa83d' },
   [BLOCK.DIRT]:   { name: 'Dirt',    solid: true,  color: '#7a5a3a' },
   [BLOCK.STONE]:  { name: 'Stone',   solid: true,  color: '#888888' },
@@ -136,7 +136,7 @@ export const BLOCK_INFO = {
 };
 
 // Blocks offered to the player in the build palette.
-export const PALETTE = [
+const PALETTE = [
   BLOCK.GRASS, BLOCK.DIRT, BLOCK.STONE, BLOCK.COBBLE, BLOCK.SAND,
   BLOCK.WOOD, BLOCK.PLANK, BLOCK.LEAVES, BLOCK.GLASS, BLOCK.BRICK, BLOCK.SNOW,
 ];
@@ -145,7 +145,7 @@ export const PALETTE = [
 let _atlas = null;
 let _tileUV = null;
 
-export function buildAtlas() {
+function buildAtlas() {
   if (_atlas) return { texture: _atlas, tileUV: _tileUV };
   const TS = 16;                       // tile size in px
   const cols = Math.ceil(Math.sqrt(tileOrder.length));
@@ -186,7 +186,7 @@ export function buildAtlas() {
 
 // Returns UV rect for a given block face direction.
 // dir: 'top' | 'bottom' | 'side'
-export function faceUV(blockId, dir) {
+function faceUV(blockId, dir) {
   const f = FACES[blockId];
   let tile;
   if (Array.isArray(f)) tile = dir === 'top' ? f[0] : dir === 'bottom' ? f[2] : f[1];

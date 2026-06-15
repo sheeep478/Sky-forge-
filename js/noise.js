@@ -1,7 +1,7 @@
 // Seeded pseudo-random + value noise with fractal octaves.
 // Lightweight, dependency-free, deterministic from a numeric seed.
 
-export function hashSeed(str) {
+function hashSeed(str) {
   // Convert any string into a 32-bit numeric seed.
   let h = 1779033703 ^ str.length;
   for (let i = 0; i < str.length; i++) {
@@ -13,7 +13,7 @@ export function hashSeed(str) {
   return (h ^= h >>> 16) >>> 0;
 }
 
-export function mulberry32(seed) {
+function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -23,7 +23,7 @@ export function mulberry32(seed) {
   };
 }
 
-export class Noise {
+class Noise {
   constructor(seed) {
     this.seed = seed >>> 0;
   }

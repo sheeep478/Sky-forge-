@@ -1,13 +1,12 @@
 // Voxel world: chunk storage, terrain generation (regular / flat / skyblock),
 // and face-culled mesh building with baked directional shading.
 
-import * as THREE from 'three';
-import { Noise, mulberry32 } from './noise.js';
-import { BLOCK, BLOCK_INFO, buildAtlas, faceUV } from './blocks.js';
+// Globals provided by earlier scripts: THREE, Noise, mulberry32,
+// BLOCK, BLOCK_INFO, buildAtlas, faceUV.
 
-export const CHUNK = 16;          // chunk width/depth in blocks
-export const HEIGHT = 64;         // world height in blocks
-export const SEA_LEVEL = 24;
+const CHUNK = 16;          // chunk width/depth in blocks
+const HEIGHT = 64;         // world height in blocks
+const SEA_LEVEL = 24;
 
 // Six face directions: [normal, brightness]
 const DIRS = [
@@ -25,7 +24,7 @@ const DIRS = [
     corners: [[0,0,0],[0,0,1],[0,1,1],[0,1,0]] },
 ];
 
-export class World {
+class World {
   constructor(scene, seed, type) {
     this.scene = scene;
     this.seed = seed;
