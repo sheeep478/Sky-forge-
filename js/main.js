@@ -285,13 +285,16 @@ function setupTouch() {
     const r = joy.getBoundingClientRect();
     jcx = r.left + r.width / 2; jcy = r.top + r.height / 2;
   };
+  const DEAD = 0.18;                 // ignore tiny wobble near the centre
   const moveJoy = (t) => {
     let dx = t.clientX - jcx, dy = t.clientY - jcy;
     const d = Math.hypot(dx, dy);
     if (d > R) { dx = dx / d * R; dy = dy / d * R; }
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    input.mx = dx / R; input.mz = dy / R;
-    input.sprint = d > R * 0.8;
+    const mx = dx / R, mz = dy / R;
+    if (Math.hypot(mx, mz) < DEAD) { input.mx = 0; input.mz = 0; }
+    else { input.mx = mx; input.mz = mz; }
+    input.sprint = d > R * 0.85;
   };
   const endJoy = () => {
     joyId = null; knob.style.transform = 'translate(0,0)';
@@ -302,13 +305,15 @@ function setupTouch() {
     e.preventDefault(); startJoy(e.changedTouches[0]); moveJoy(e.changedTouches[0]);
   }, { passive: false });
 
-  // global touch handling for look (right side) + joystick tracking
+  // global touch handling: any touch that isn't on the joystick or a button
+  // becomes a look-drag. (Restricting look to one side felt unresponsive.)
+  const LOOK_SENS = 0.9;
   let lookId = null, lastLX = 0, lastLY = 0;
   window.addEventListener('touchstart', (e) => {
     if (!running || paused) return;
     for (const t of e.changedTouches) {
       if (joyId === null && isInside(joy, t)) { startJoy(t); moveJoy(t); continue; }
-      if (lookId === null && t.clientX > window.innerWidth * 0.4 && !isOnButton(t)) {
+      if (lookId === null && !isInside(joy, t) && !isOnButton(t)) {
         lookId = t.identifier; lastLX = t.clientX; lastLY = t.clientY;
       }
     }
@@ -318,7 +323,8 @@ function setupTouch() {
     for (const t of e.changedTouches) {
       if (t.identifier === joyId) { e.preventDefault(); moveJoy(t); }
       else if (t.identifier === lookId && player) {
-        player.look((t.clientX - lastLX) * 1.6, (t.clientY - lastLY) * 1.6);
+        e.preventDefault();
+        player.look((t.clientX - lastLX) * LOOK_SENS, (t.clientY - lastLY) * LOOK_SENS);
         lastLX = t.clientX; lastLY = t.clientY;
       }
     }

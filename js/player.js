@@ -45,13 +45,13 @@ class Player {
     dt = Math.min(dt, 0.05);
     const w = this.world;
 
-    // desired horizontal movement relative to yaw
+    // desired horizontal movement relative to yaw.
+    // forward dir = (-sin, -cos), right dir = (cos, -sin); mz<0 means forward.
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     let fx = 0, fz = 0;
-    // forward is -Z in camera space; map analog inputs
     const mz = input.mz, mx = input.mx;
-    fx += mx * cos - mz * sin;
-    fz += mx * sin + mz * cos;
+    fx += mx * cos + mz * sin;
+    fz += mz * cos - mx * sin;
     const len = Math.hypot(fx, fz);
     if (len > 1) { fx /= len; fz /= len; }
 

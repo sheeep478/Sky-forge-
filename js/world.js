@@ -124,9 +124,9 @@ class World {
       }
     // a tree
     this._tree(ch, 6, base + 3, 6);
-    // small extra floating block of sand (challenge resource)
-    this._set(ch, 13, base + 2, 13, BLOCK.SAND);
-    this._set(ch, 13, base + 1, 13, BLOCK.SAND);
+    // a small sand resource sitting ON the island (not floating)
+    this._set(ch, 10, base + 3, 10, BLOCK.SAND);
+    this._set(ch, 10, base + 4, 10, BLOCK.SAND);
   }
 
   _genRegular(cx, cz, ch) {

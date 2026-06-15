@@ -81,6 +81,8 @@ class Mob {
 
   update(dt) {
     const w = this.world;
+    const G = 22, MAXV = 40;
+
     // decide behaviour periodically
     this.walkTimer -= dt;
     if (this.walkTimer <= 0) {
@@ -89,34 +91,51 @@ class Mob {
       this.walkTimer = 1.5 + Math.random() * 3;
     }
 
-    // gravity / ground follow
-    const feetY = Math.floor(this.pos.y);
-    if (!w.isSolid(this.pos.x, feetY - 1, this.pos.z) && this.vy <= 0) {
-      this.vy -= 18 * dt;
-    }
-    this.pos.y += this.vy * dt;
-    // land on surface
-    const groundY = w.surfaceY(Math.floor(this.pos.x), Math.floor(this.pos.z));
-    if (this.pos.y <= groundY) { this.pos.y = groundY; this.vy = 0; }
+    const bx = Math.floor(this.pos.x), bz = Math.floor(this.pos.z);
+    const feetL = Math.floor(this.pos.y + 0.0001);   // block level the feet rest at
 
-    if (this.moving) {
+    // find the ground directly beneath the feet (scan a few blocks down)
+    let stand = -Infinity;
+    for (let L = feetL; L >= feetL - 4; L--) {
+      if (w.isSolid(bx, L - 1, bz)) { stand = L; break; }
+    }
+
+    // gravity — the mob falls whenever nothing is under it
+    this.vy -= G * dt;
+    if (this.vy < -MAXV) this.vy = -MAXV;
+    let ny = this.pos.y + this.vy * dt;
+    let onGround = false;
+    if (stand !== -Infinity && ny <= stand) { ny = stand; this.vy = 0; onGround = true; }
+    this.pos.y = ny;
+
+    // wander horizontally, but don't walk into walls or off >1 block drops
+    if (this.moving && onGround) {
       const nx = this.pos.x - Math.sin(this.yaw) * this.speed * dt;
       const nz = this.pos.z - Math.cos(this.yaw) * this.speed * dt;
-      const targetSurf = w.surfaceY(Math.floor(nx), Math.floor(nz));
-      // step up at most 1 block; otherwise turn
-      if (targetSurf - this.pos.y <= 1.05 && targetSurf > -10) {
+      const tbx = Math.floor(nx), tbz = Math.floor(nz);
+      const stepUp = w.isSolid(tbx, feetL, tbz);            // 1-high step in front
+      const headBlocked = w.isSolid(tbx, feetL + (stepUp ? 2 : 1), tbz);
+      // ground beneath the target within one block down?
+      const groundAhead = w.isSolid(tbx, feetL - 1, tbz) || w.isSolid(tbx, feetL, tbz);
+      if (!headBlocked && groundAhead) {
         this.pos.x = nx; this.pos.z = nz;
-        if (targetSurf > this.pos.y) this.pos.y = targetSurf;
+        if (stepUp) this.pos.y = feetL + 1;                 // climb the step
         this.anim += dt * 9;
       } else {
-        this.yaw += Math.PI / 2;
+        this.yaw += Math.PI / 2;                            // turn away from wall/edge
       }
+    }
+
+    // if a mob somehow falls into the void, drop it back onto its column's surface
+    if (this.pos.y < -25) {
+      const surf = w.surfaceY(bx, bz);
+      if (surf > 0) { this.pos.y = surf; this.vy = 0; }
     }
 
     // apply transform + leg swing
     this.obj.position.copy(this.pos);
     this.obj.rotation.y = this.yaw;
-    const swing = this.moving ? Math.sin(this.anim) * 0.5 : 0;
+    const swing = (this.moving && onGround) ? Math.sin(this.anim) * 0.5 : 0;
     this.legs.forEach((l, i) => { l.rotation.x = swing * (i % 2 === 0 ? 1 : -1); });
   }
 
