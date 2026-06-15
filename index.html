@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#7ec0ee" />
+  <title>SkyForge — A Voxel Sandbox</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- ===================== MAIN MENU ===================== -->
+  <div id="menu" class="screen">
+    <div class="menu-panel">
+      <h1 class="logo">SKY<span>FORGE</span></h1>
+      <p class="tagline">Build. Survive. Explore.</p>
+
+      <div class="menu-section">
+        <label class="field-label">Game Mode</label>
+        <div class="btn-group" id="mode-group">
+          <button class="opt selected" data-mode="survival">⚔️ Survival</button>
+          <button class="opt" data-mode="creative">🛠️ Creative</button>
+        </div>
+      </div>
+
+      <div class="menu-section">
+        <label class="field-label">World Type</label>
+        <div class="btn-group" id="world-group">
+          <button class="opt selected" data-world="regular">🌳 Regular</button>
+          <button class="opt" data-world="flat">▦ Flat</button>
+          <button class="opt" data-world="skyblock">☁️ Skyblock</button>
+        </div>
+      </div>
+
+      <div class="menu-section">
+        <label class="field-label">World Seed (optional)</label>
+        <input id="seed-input" type="text" placeholder="Leave blank for random" autocomplete="off" />
+      </div>
+
+      <button id="play-btn" class="play-btn">▶ Create World</button>
+
+      <p class="hint" id="device-hint"></p>
+    </div>
+    <div class="credits">A tiny Minecraft-like sandbox · WASD/Touch to move</div>
+  </div>
+
+  <!-- ===================== LOADING ===================== -->
+  <div id="loading" class="screen hidden">
+    <div class="loader-box">
+      <div class="spinner"></div>
+      <p id="loading-text">Generating world…</p>
+    </div>
+  </div>
+
+  <!-- ===================== GAME HUD ===================== -->
+  <div id="hud" class="hidden">
+    <div id="crosshair">+</div>
+
+    <!-- Stats (survival only) -->
+    <div id="stats">
+      <div id="health" class="bar-row"></div>
+      <div id="hunger" class="bar-row"></div>
+    </div>
+
+    <!-- Hotbar -->
+    <div id="hotbar"></div>
+
+    <!-- Top-right controls -->
+    <div id="top-controls">
+      <button class="icon-btn" id="menu-btn" title="Menu">☰</button>
+    </div>
+
+    <div id="mode-indicator"></div>
+
+    <!-- Mobile touch controls -->
+    <div id="touch-controls" class="hidden">
+      <div id="joystick">
+        <div id="joystick-knob"></div>
+      </div>
+      <div id="action-buttons">
+        <button class="touch-btn" id="btn-jump">⤒</button>
+        <button class="touch-btn" id="btn-place">▣</button>
+        <button class="touch-btn" id="btn-break">⛏</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== PAUSE / INVENTORY ===================== -->
+  <div id="pause" class="screen hidden">
+    <div class="menu-panel small">
+      <h2>Paused</h2>
+      <div id="inventory-grid"></div>
+      <button id="resume-btn" class="play-btn">Resume</button>
+      <button id="quit-btn" class="play-btn ghost">Quit to Menu</button>
+    </div>
+  </div>
+
+  <!-- CDN load failure banner -->
+  <div id="cdn-error" class="screen hidden">
+    <div class="menu-panel small">
+      <h2>Couldn't load engine</h2>
+      <p style="color:#9aa0ad;margin:14px 0;line-height:1.5">
+        SkyForge needs to download the Three.js engine from a CDN on first run.
+        Your network appears to have blocked it. Connect to the internet and reload,
+        or host the file locally.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // If the module engine fails to import (e.g. CDN blocked), surface a message.
+    window.__skyforgeBooted = false;
+    window.addEventListener('error', (e) => {
+      if (e && (e.message || '').toString().match(/import|module|three/i) && !window.__skyforgeBooted) {
+        document.getElementById('cdn-error').classList.remove('hidden');
+      }
+    });
+    setTimeout(() => {
+      if (!window.__skyforgeBooted) {
+        document.getElementById('cdn-error').classList.remove('hidden');
+      }
+    }, 6000);
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+# 🟩 SkyForge
+
+A small **Minecraft-like voxel sandbox** that runs in the browser — on desktop **and** mobile.
+Build, mine, and explore procedurally generated blocky worlds with passive animals roaming around.
+
+![mode: survival / creative](https://img.shields.io/badge/modes-survival%20%7C%20creative-5db85c)
+![worlds: regular / flat / skyblock](https://img.shields.io/badge/worlds-regular%20%7C%20flat%20%7C%20skyblock-3a6ea5)
+
+## Features
+
+- **Two game modes**
+  - **Survival** — health & hunger, fall damage, a starter kit, blocks go into your inventory when mined, limited stacks.
+  - **Creative** — fly (double-tap *Space* / long-press jump on mobile), unlimited blocks, no damage.
+- **Three world types**
+  - **Regular** — rolling procedural terrain with hills, water, beaches and trees.
+  - **Flat** — a clean superflat canvas for building.
+  - **Skyblock** — a single floating island in the void. Survive with what you have.
+- **Seeded worlds** — type a seed for a reproducible world, or leave it blank for a random one.
+- **11 block types** with procedurally generated pixel-art textures (grass, dirt, stone, cobble, sand, wood, planks, leaves, glass, bricks, snow) plus water and bedrock.
+- **3 passive mobs** — 🐷 Pig, 🐮 Cow, 🐔 Chicken — boxy models that wander, follow the terrain, and animate as they walk.
+- **Full mobile support** — on-screen joystick, look-to-drag, and jump / place / break buttons. Desktop gets mouse-look + keyboard.
+- **A proper main menu** to pick mode, world type and seed, plus an in-game pause/inventory screen.
+
+## Play
+
+Because the game uses ES modules, open it through a local web server (not `file://`).
+
+```bash
+# from the project root, pick any one:
+python3 -m http.server 8000
+#   …or
+npx serve .
+```
+
+Then open **http://localhost:8000** in your browser. On a phone, open the same
+URL over your local network (e.g. `http://<your-computer-ip>:8000`).
+
+> The 3D engine (Three.js) is loaded from a CDN on first run, so the initial
+> load needs an internet connection.
+
+## Controls
+
+### Desktop
+| Action | Key |
+|---|---|
+| Move | **W A S D** / arrow keys |
+| Look | **Mouse** (click the world first to lock the cursor) |
+| Jump | **Space** |
+| Fly (creative) | double-tap **Space**, or **F** |
+| Sprint | **Ctrl** (or **R**) |
+| Descend (flying) | **Shift** |
+| Break block | **Left click** |
+| Place block | **Right click** |
+| Select block | **1–9** or **scroll wheel** |
+| Pause / menu | **Esc** |
+
+### Mobile
+- **Left joystick** — move (push to the edge to sprint).
+- **Drag the right side of the screen** — look around.
+- **⤒ button** — jump (long-press to toggle flight in creative).
+- **▣ button** — place block · **⛏ button** — break block.
+- Tap a **hotbar slot** to choose the active block.
+
+## Project structure
+
+```
+index.html        Main menu, HUD, mobile controls, layout
+css/style.css     All styling (responsive for phones)
+js/
+  main.js         Entry point: menu, render loop, input, survival systems
+  world.js        Chunk storage, terrain generation, face-culled meshing
+  player.js       First-person movement + AABB voxel collision
+  mobs.js         Pig / cow / chicken models and wander AI
+  blocks.js       Block definitions + procedural texture atlas
+  noise.js        Seeded value-noise terrain generator
+```
+
+Built with [Three.js](https://threejs.org/). No build step required.
