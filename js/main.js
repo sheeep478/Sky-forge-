@@ -50,6 +50,9 @@ let gameSeed = 0, dimension = 'overworld';
 let overworld = null, netherWorld = null, overworldMobs = null, netherMobs = null;
 let portalCooldown = 0, portalTimer = 0, returnPos = null;
 
+// mining (hold-to-break) state
+let miningActive = false, miningTarget = null, miningProgress = 0, miningNeeded = 1;
+
 function startGame() {
   // Engine (Three.js) must be loaded by the CDN bridge first.
   if (typeof THREE === 'undefined' || !window.THREE) {
@@ -101,12 +104,13 @@ function initWorld(seed) {
   if (selectedWorld !== 'skyblock') mobs.spawnInitial(sx, sz, isTouch ? 5 : 8, 16);
   else mobs.spawnInitial(sx, sz, 3, 3);   // keep animals on the tiny island
 
-  // reset survival
+  // reset survival + inventory
   health = 20; hunger = 20; lavaTimer = 0;
-  buildHotbar();
-  buildInventory();
+  miningActive = false; miningTarget = null; miningProgress = 0;
+  buildItemIcons();
+  setupInventory();
+  buildCrafting();
   updateStats();
-  setupInventoryCounts();
 
   loadingEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
@@ -165,68 +169,150 @@ function setDimensionVisuals() {
   }
 }
 
-// ---------------- HUD ----------------
-function swatchStyle(id) {
-  const icon = blockIcon(id);
-  const bg = icon
-    ? `background-image:url('${icon}');background-size:cover;`
-    : `background:${BLOCK_INFO[id].color};`;
-  return `${bg}background-color:${BLOCK_INFO[id].color};`;
+// ---------------- inventory + items ----------------
+const inventory = {};        // itemId -> count (Infinity in creative)
+let hotbarItems = [];        // itemIds shown on the hotbar
+
+const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD,
+                   ITEM.S_PICK, ITEM.S_AXE, ITEM.S_SHOVEL, ITEM.S_SWORD];
+
+function iconStyle(id) {
+  const icon = itemIcon(id);
+  const fallback = isBlockItem(id) && BLOCK_INFO[id] ? BLOCK_INFO[id].color : '#3a3f4b';
+  const bg = icon ? `background-image:url('${icon}');background-size:cover;` : '';
+  return `${bg}background-color:${fallback};`;
 }
 
-function buildHotbar() {
+function setupInventory() {
+  for (const k in inventory) delete inventory[k];
+  if (selectedMode === 'creative') {
+    for (const id of PALETTE) inventory[id] = Infinity;
+    for (const id of ALL_TOOLS) inventory[id] = Infinity;
+  } else {
+    // friendly starter kit so mining isn't a slog
+    inventory[BLOCK.WOOD] = 6;
+    inventory[ITEM.W_PICK] = 1;
+    inventory[ITEM.W_AXE] = 1;
+  }
+  refreshHotbar(true);
+}
+
+// give / take items
+function give(id, n) {
+  if (inventory[id] === Infinity) return;
+  inventory[id] = (inventory[id] || 0) + n;
+  refreshHotbar();
+}
+function take(id, n) {
+  if (inventory[id] === Infinity) return;
+  inventory[id] = (inventory[id] || 0) - n;
+  if (inventory[id] <= 0) delete inventory[id];
+  refreshHotbar();
+}
+function activeItem() { return hotbarItems[hotbarIndex]; }
+function activeTool() { const it = activeItem(); return TOOLS[it] ? it : 0; }
+
+// recompute the hotbar contents, preserving the selected item where possible
+function refreshHotbar(reset) {
+  const prev = reset ? null : hotbarItems[hotbarIndex];
+  if (selectedMode === 'creative') {
+    hotbarItems = [...ALL_TOOLS, ...PALETTE];
+  } else {
+    const owned = Object.keys(inventory).map(Number).filter((id) => (inventory[id] || 0) > 0);
+    owned.sort((a, b) => (isTool(b) - isTool(a)) || (a - b));  // tools first
+    hotbarItems = owned;
+  }
+  if (hotbarItems.length === 0) hotbarItems = [BLOCK.DIRT];   // never empty
+  let idx = prev != null ? hotbarItems.indexOf(prev) : -1;
+  hotbarIndex = idx >= 0 ? idx : Math.min(hotbarIndex, hotbarItems.length - 1);
+  buildHotbarDOM();
+  if (paused) { buildInventory(); refreshCrafting(); }
+}
+
+function buildHotbarDOM() {
   const hb = $('hotbar');
   hb.innerHTML = '';
-  PALETTE.forEach((id, i) => {
+  hotbarItems.forEach((id, i) => {
+    const c = inventory[id];
+    const count = (c === Infinity || c == null || isTool(id)) ? '' : (c > 0 ? c : '');
     const slot = document.createElement('div');
     slot.className = 'slot' + (i === hotbarIndex ? ' active' : '');
     slot.innerHTML =
-      `<span class="name">${BLOCK_INFO[id].name}</span>` +
-      `<div class="swatch" style="${swatchStyle(id)}"></div>` +
-      `<span class="count" data-count="${id}"></span>`;
+      `<span class="name">${itemName(id)}</span>` +
+      `<div class="swatch" style="${iconStyle(id)}"></div>` +
+      `<span class="count">${count}</span>`;
     slot.addEventListener('click', () => selectHotbar(i));
     hb.appendChild(slot);
   });
-  refreshCounts();
-}
-
-function selectHotbar(i) {
-  hotbarIndex = (i + PALETTE.length) % PALETTE.length;
-  const hb = $('hotbar');
-  hb.querySelectorAll('.slot').forEach((s, idx) =>
-    s.classList.toggle('active', idx === hotbarIndex));
   const s = hb.children[hotbarIndex];
   if (s) hb.scrollLeft = s.offsetLeft - hb.clientWidth / 2 + s.clientWidth / 2;
 }
 
-// inventory counts (survival)
-const inventory = {};
-function setupInventoryCounts() {
-  for (const id of PALETTE) inventory[id] = selectedMode === 'creative' ? Infinity : 0;
-  // give a small starter kit in survival
-  if (selectedMode === 'survival') {
-    inventory[BLOCK.DIRT] = 16; inventory[BLOCK.WOOD] = 8; inventory[BLOCK.STONE] = 8;
-  }
-  refreshCounts();
-}
-function refreshCounts() {
-  document.querySelectorAll('.count').forEach((el) => {
-    const id = +el.dataset.count;
-    const c = inventory[id];
-    el.textContent = (c === Infinity || c === undefined) ? '' : (c > 0 ? c : '');
-  });
+function selectHotbar(i) {
+  if (!hotbarItems.length) return;
+  hotbarIndex = (i + hotbarItems.length) % hotbarItems.length;
+  buildHotbarDOM();
 }
 
+// ---- inventory + crafting panel (pause screen) ----
 function buildInventory() {
   const grid = $('inventory-grid');
   grid.innerHTML = '';
-  PALETTE.forEach((id, i) => {
+  const ids = selectedMode === 'creative'
+    ? [...ALL_TOOLS, ...PALETTE]
+    : Object.keys(inventory).map(Number).filter((id) => (inventory[id] || 0) > 0);
+  if (ids.length === 0) { grid.innerHTML = '<p class="empty">Mine some blocks…</p>'; }
+  ids.forEach((id) => {
+    const c = inventory[id];
+    const count = (c === Infinity || isTool(id)) ? '' : c;
     const it = document.createElement('div');
     it.className = 'inv-item';
-    it.innerHTML = `<div class="swatch" style="${swatchStyle(id)}"></div>${BLOCK_INFO[id].name}`;
-    it.addEventListener('click', () => { selectHotbar(i); togglePause(); });
+    it.innerHTML = `<div class="swatch" style="${iconStyle(id)}"></div>` +
+      `<span class="count">${count || ''}</span><span class="lbl">${itemName(id)}</span>`;
+    it.addEventListener('click', () => { selectHotbarItem(id); togglePause(); });
     grid.appendChild(it);
   });
+}
+function selectHotbarItem(id) {
+  const i = hotbarItems.indexOf(id);
+  if (i >= 0) selectHotbar(i);
+}
+
+function buildCrafting() {
+  const list = $('crafting-list');
+  list.innerHTML = '';
+  RECIPES.forEach((r, ri) => {
+    const row = document.createElement('div');
+    row.className = 'recipe';
+    row.dataset.ri = ri;
+    const ing = r.in.map(([id, n]) =>
+      `<span class="ing"><span class="swatch sm" style="${iconStyle(id)}"></span>${n}</span>`).join('');
+    row.innerHTML =
+      `<div class="recipe-out"><span class="swatch" style="${iconStyle(r.out)}"></span>` +
+      `<span class="recipe-name">${itemName(r.out)}${r.n > 1 ? ' ×' + r.n : ''}</span></div>` +
+      `<div class="recipe-ings">${ing}</div>` +
+      `<button class="craft-btn">Craft</button>`;
+    row.querySelector('.craft-btn').addEventListener('click', () => craft(r));
+    list.appendChild(row);
+  });
+  refreshCrafting();
+}
+function refreshCrafting() {
+  document.querySelectorAll('#crafting-list .recipe').forEach((row) => {
+    const r = RECIPES[+row.dataset.ri];
+    const ok = canCraft(inventory, r);
+    row.classList.toggle('disabled', !ok);
+    row.querySelector('.craft-btn').disabled = !ok;
+  });
+}
+function craft(r) {
+  if (!canCraft(inventory, r)) return;
+  for (const [id, n] of r.in) take(id, n);
+  give(r.out, r.n);
+  refreshHotbar();
+  buildInventory();
+  refreshCrafting();
+  flash('Crafted ' + itemName(r.out));
 }
 
 function updateStats() {
@@ -255,7 +341,7 @@ function setupInput() {
     if (e.code === 'KeyG') ignitePortal();
     if (e.code.startsWith('Digit')) {
       const n = +e.code.slice(5);
-      if (n >= 1 && n <= PALETTE.length) selectHotbar(n - 1);
+      if (n >= 1 && n <= hotbarItems.length) selectHotbar(n - 1);
     }
     if (e.code === 'Space') {
       const now = performance.now();
@@ -277,13 +363,14 @@ function setupInput() {
       player.look(e.movementX, e.movementY);
     }
   });
-  // desktop break / place
+  // desktop break (hold) / place
   canvas.addEventListener('mousedown', (e) => {
     if (isTouch || !running || paused) return;
     if (document.pointerLockElement !== canvas) return;
-    if (e.button === 0) breakBlock();
+    if (e.button === 0) onBreakPress();
     else if (e.button === 2) placeBlock();
   });
+  window.addEventListener('mouseup', (e) => { if (e.button === 0) onBreakRelease(); });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   // scroll hotbar
   window.addEventListener('wheel', (e) => {
@@ -388,7 +475,8 @@ function setupTouch() {
   jump.addEventListener('touchend', () => clearTimeout(jumpHold));
 
   $('btn-place').addEventListener('touchstart', (e) => { e.preventDefault(); placeBlock(); }, { passive: false });
-  $('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); breakBlock(); }, { passive: false });
+  $('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); onBreakPress(); }, { passive: false });
+  $('btn-break').addEventListener('touchend', (e) => { e.preventDefault(); onBreakRelease(); }, { passive: false });
   $('btn-ignite').addEventListener('touchstart', (e) => { e.preventDefault(); ignitePortal(); }, { passive: false });
 }
 function hideHint() {
@@ -435,46 +523,56 @@ function raycast(maxDist = 6) {
   return null;
 }
 
-function breakBlock() {
+// ---- mining ----
+function onBreakPress() {
   if (!running || paused) return;
+  if (selectedMode === 'creative') { mineInstant(); return; }
+  miningActive = true;            // survival: hold to break (handled in loop)
+}
+function onBreakRelease() {
+  miningActive = false; miningTarget = null; miningProgress = 0;
+  showMining(-1);
+}
+function mineInstant() {
   const hit = raycast();
-  if (!hit) return;
-  const info = BLOCK_INFO[hit.block];
-  if (info.unbreakable) return;
+  if (!hit || BLOCK_INFO[hit.block].unbreakable) return;
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
-  // collect into inventory (survival); oriented logs drop a plain log
-  let drop = hit.block;
-  if (drop === BLOCK.WOOD_X || drop === BLOCK.WOOD_Z) drop = BLOCK.WOOD;
-  if (selectedMode === 'survival' && !info.liquid && PALETTE.includes(drop)) {
-    inventory[drop] = (inventory[drop] || 0) + 1;
-    refreshCounts();
-  }
+}
+function doBreakSurvival(hit) {
+  if (BLOCK_INFO[hit.block].unbreakable) return;
+  const tool = activeTool();
+  world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
+  const drop = blockDrop(hit.block, tool);
+  if (drop) give(drop.id, drop.n);
 }
 
 function placeBlock() {
   if (!running || paused) return;
+  const item = activeItem();
+  if (!isBlockItem(item) || !PALETTE.includes(item)) return;   // only placeable blocks
+  if (selectedMode === 'survival' && !(inventory[item] > 0)) return;
   const hit = raycast();
   if (!hit) return;
   const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
-  const baseId = PALETTE[hotbarIndex];
-  // inventory check (logs are tracked as the plain WOOD item)
-  if (selectedMode === 'survival') {
-    if (!inventory[baseId] || inventory[baseId] <= 0) return;
-  }
-  // orient logs along the axis of the face you clicked
-  let id = baseId;
-  if (baseId === BLOCK.WOOD) {
+  // orient logs along the axis of the clicked face
+  let id = item;
+  if (item === BLOCK.WOOD) {
     if (hit.nx !== 0) id = BLOCK.WOOD_X;
     else if (hit.nz !== 0) id = BLOCK.WOOD_Z;
-    else id = BLOCK.WOOD;
   }
-  // don't place inside the player's body
   if (overlapsPlayer(px, py, pz)) return;
   if (world.getBlock(px, py, pz) !== BLOCK.AIR) return;
   world.setBlock(px, py, pz, id);
-  if (selectedMode === 'survival' && inventory[baseId] !== Infinity) {
-    inventory[baseId]--; refreshCounts();
-  }
+  if (selectedMode === 'survival') take(item, 1);
+}
+
+// mining progress bar near the crosshair (frac < 0 hides it)
+function showMining(frac) {
+  const bar = $('mining-bar'), fill = $('mining-fill');
+  if (!bar) return;
+  if (frac < 0) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  fill.style.width = Math.max(0, Math.min(1, frac)) * 100 + '%';
 }
 
 function overlapsPlayer(bx, by, bz) {
@@ -604,8 +702,13 @@ function togglePause() {
   if (!running) return;
   paused = !paused;
   pauseEl.classList.toggle('hidden', !paused);
-  if (paused && document.pointerLockElement) document.exitPointerLock();
-  if (!paused) lastTime = performance.now();
+  if (paused) {
+    onBreakRelease();                 // stop mining while in the menu
+    buildInventory(); refreshCrafting();
+    if (document.pointerLockElement) document.exitPointerLock();
+  } else {
+    lastTime = performance.now();
+  }
 }
 function quitToMenu() {
   running = false; paused = false;
@@ -659,6 +762,24 @@ function loop(now) {
       lavaTimer += dt;
       if (lavaTimer > 0.5) { lavaTimer = 0; health = Math.max(0, health - 2); updateStats(); if (health <= 0) respawn(); }
     } else lavaTimer = 0;
+  }
+
+  // survival hold-to-mine
+  if (selectedMode === 'survival' && miningActive) {
+    const hit = raycast();
+    if (hit && !BLOCK_INFO[hit.block].unbreakable) {
+      const key = hit.x + ',' + hit.y + ',' + hit.z;
+      if (key !== miningTarget) {
+        miningTarget = key; miningProgress = 0;
+        miningNeeded = miningTime(hit.block, activeTool());
+      }
+      miningProgress += dt;
+      showMining(miningProgress / miningNeeded);
+      if (miningProgress >= miningNeeded) {
+        doBreakSurvival(hit);
+        miningTarget = null; miningProgress = 0; showMining(-1);
+      }
+    } else { miningTarget = null; showMining(-1); }
   }
 
   // nether portal: stand in a portal block briefly to travel

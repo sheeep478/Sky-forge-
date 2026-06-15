@@ -191,6 +191,17 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   pointer-events: none;
 }
 
+#mining-bar {
+  position: absolute; top: calc(50% + 22px); left: 50%;
+  transform: translateX(-50%);
+  width: 80px; height: 7px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 4px; overflow: hidden;
+  pointer-events: none;
+}
+#mining-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.05s linear; }
+
 #stats {
   position: absolute; left: 50%; bottom: 92px;
   transform: translateX(-50%);
@@ -342,22 +353,54 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 
 /* ===================== PAUSE / INVENTORY ===================== */
 #pause { background: rgba(10,12,16,0.82); z-index: 60; }
-#pause h2 { margin-bottom: 18px; font-size: 26px; }
+#pause .menu-panel { width: min(520px, 94vw); }
+#pause h2 { margin-bottom: 14px; font-size: 24px; }
+.sub {
+  text-align: left; font-size: 12px; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--muted); margin: 6px 0 8px;
+}
 #inventory-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+  max-height: 26vh; overflow-y: auto;
 }
+#inventory-grid .empty { grid-column: 1/-1; color: var(--muted); font-size: 13px; text-align: center; padding: 14px; }
 .inv-item {
-  aspect-ratio: 1;
+  position: relative; aspect-ratio: 1;
   background: var(--panel-light);
   border: 2px solid #3a3f4b;
   border-radius: 8px;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 4px; cursor: pointer;
-  padding: 6px; font-size: 10px; color: var(--muted);
+  gap: 3px; cursor: pointer;
+  padding: 5px; font-size: 9px; color: var(--muted);
 }
 .inv-item:hover { border-color: var(--accent); }
 .inv-item .swatch { width: 30px; height: 30px; border-radius: 5px; border: 1px solid rgba(0,0,0,0.4); }
+.inv-item .count { font-weight: 700; color: #fff; font-size: 11px; }
+.inv-item .lbl { line-height: 1.1; text-align: center; }
+
+#crafting-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 30vh; overflow-y: auto; margin-bottom: 16px;
+}
+.recipe {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel-light); border: 1px solid #3a3f4b;
+  border-radius: 9px; padding: 7px 10px;
+}
+.recipe.disabled { opacity: 0.45; }
+.recipe-out { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+.recipe-name { font-size: 12px; font-weight: 600; color: var(--text); text-align: left; }
+.recipe-ings { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; }
+.ing { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); }
+.recipe .swatch { width: 26px; height: 26px; border-radius: 5px; border: 1px solid rgba(0,0,0,0.4); }
+.recipe .swatch.sm { width: 18px; height: 18px; }
+.craft-btn {
+  background: var(--accent); color: #fff; border: none;
+  padding: 7px 12px; border-radius: 7px; font-weight: 700;
+  font-size: 12px; cursor: pointer;
+}
+.craft-btn:disabled { background: #4a4f5b; cursor: default; }

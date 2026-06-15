@@ -45,7 +45,8 @@
         <summary>How to play</summary>
         <div class="help-body">
           <p><b>Move</b> with WASD or the left thumbstick · <b>look</b> with the mouse or by dragging.</p>
-          <p><b>Break</b> / <b>place</b> blocks to build. Pick blocks from the hotbar (1-9 or tap).</p>
+          <p><b>Mine</b> by holding break — harder blocks take longer; the right <b>tool</b> is faster. <b>Place</b> blocks to build.</p>
+          <p><b>Craft</b> from the pause menu (☰): logs → planks → sticks → tools. Stone needs a pickaxe to drop.</p>
           <p><b>Logs</b> face the way you place them. <b>Creative</b>: double-tap jump to fly.</p>
           <p>🔥 <b>Nether portal:</b> build a 4×5 obsidian frame, then light it (press <b>G</b> / 🔥) and step through.</p>
         </div>
@@ -67,6 +68,7 @@
   <!-- ===================== GAME HUD ===================== -->
   <div id="hud" class="hidden">
     <div id="crosshair">+</div>
+    <div id="mining-bar" class="hidden"><div id="mining-fill"></div></div>
 
     <!-- Stats (survival only) -->
     <div id="stats">
@@ -104,11 +106,14 @@
     </div>
   </div>
 
-  <!-- ===================== PAUSE / INVENTORY ===================== -->
+  <!-- ===================== PAUSE / INVENTORY / CRAFTING ===================== -->
   <div id="pause" class="screen hidden">
-    <div class="menu-panel small">
-      <h2>Paused</h2>
+    <div class="menu-panel">
+      <h2>Inventory &amp; Crafting</h2>
+      <h3 class="sub">Items</h3>
       <div id="inventory-grid"></div>
+      <h3 class="sub">Crafting</h3>
+      <div id="crafting-list"></div>
       <button id="resume-btn" class="play-btn">Resume</button>
       <button id="quit-btn" class="play-btn ghost">Quit to Menu</button>
     </div>
@@ -148,6 +153,7 @@
   <!-- Game code (classic scripts, load order matters) -->
   <script src="js/noise.js"></script>
   <script src="js/blocks.js"></script>
+  <script src="js/items.js"></script>
   <script src="js/world.js"></script>
   <script src="js/player.js"></script>
   <script src="js/mobs.js"></script>

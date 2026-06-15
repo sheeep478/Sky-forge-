@@ -107,7 +107,7 @@ class World {
     for (let x = 0; x < CHUNK; x++)
       for (let z = 0; z < CHUNK; z++) {
         this._set(ch, x, 0, z, BLOCK.BEDROCK);
-        this._set(ch, x, 1, z, BLOCK.DIRT);
+        this._set(ch, x, 1, z, BLOCK.STONE);
         this._set(ch, x, 2, z, BLOCK.DIRT);
         this._set(ch, x, 3, z, BLOCK.GRASS);
       }

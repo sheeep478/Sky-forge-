@@ -20,6 +20,7 @@ Build, mine, and explore procedurally generated blocky worlds with passive anima
 - **20+ block types** with procedurally generated pixel-art textures — grass, dirt, stone, cobble, mossy cobble, stone bricks, sand, gravel, planks, leaves, glass, bricks, snow, coal/iron/gold/diamond ore, obsidian, netherrack, glowstone — plus water, lava and bedrock.
 - **Oriented logs** — logs face the direction you place them (vertical, or lying along X/Z).
 - **Texture item icons** — the hotbar and inventory show each block's actual texture.
+- **Mining, tools & crafting** — blocks have hardness; hold to break them. The right tool (pickaxe / axe / shovel) mines faster, and stone & ores only drop when mined with a pickaxe. Mine logs → craft planks → sticks → **wooden and stone tools** in the crafting menu (☰). Ores drop coal and diamonds. *(Furnace & iron/diamond tiers coming next.)*
 - **3 passive mobs** — 🐷 Pig, 🐮 Cow, 🐔 Chicken — boxy models that wander, follow the terrain, and animate as they walk.
 - **Full mobile support** — on-screen joystick, look-to-drag, and jump / place / break buttons. Desktop gets mouse-look + keyboard.
 - **A proper main menu** to pick mode, world type and seed, plus an in-game pause/inventory screen.
