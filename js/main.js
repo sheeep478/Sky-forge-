@@ -107,6 +107,7 @@ function initWorld(seed) {
   // reset survival + inventory
   health = 20; hunger = 20; lavaTimer = 0;
   miningActive = false; miningTarget = null; miningProgress = 0;
+  furnaceOpen = false; $('furnace').classList.add('hidden');
   buildItemIcons();
   setupInventory();
   buildCrafting();
@@ -174,7 +175,10 @@ const inventory = {};        // itemId -> count (Infinity in creative)
 let hotbarItems = [];        // itemIds shown on the hotbar
 
 const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD,
-                   ITEM.S_PICK, ITEM.S_AXE, ITEM.S_SHOVEL, ITEM.S_SWORD];
+                   ITEM.S_PICK, ITEM.S_AXE, ITEM.S_SHOVEL, ITEM.S_SWORD,
+                   ITEM.I_PICK, ITEM.I_AXE, ITEM.I_SHOVEL, ITEM.I_SWORD,
+                   ITEM.D_PICK, ITEM.D_AXE, ITEM.D_SHOVEL, ITEM.D_SWORD];
+let furnaceOpen = false;
 
 function iconStyle(id) {
   const icon = itemIcon(id);
@@ -315,6 +319,57 @@ function craft(r) {
   flash('Crafted ' + itemName(r.out));
 }
 
+// ---- furnace / smelting ----
+function buildFurnace() {
+  const list = $('furnace-list');
+  list.innerHTML = '';
+  SMELTS.forEach((s, si) => {
+    const row = document.createElement('div');
+    row.className = 'recipe'; row.dataset.si = si;
+    row.innerHTML =
+      `<div class="recipe-out"><span class="swatch" style="${iconStyle(s.out)}"></span>` +
+      `<span class="recipe-name">${itemName(s.out)}</span></div>` +
+      `<div class="recipe-ings">` +
+        `<span class="ing"><span class="swatch sm" style="${iconStyle(s.in)}"></span>1</span>` +
+        `<span class="ing">🔥&nbsp;fuel</span></div>` +
+      `<button class="craft-btn">Smelt</button>`;
+    row.querySelector('.craft-btn').addEventListener('click', () => smelt(s));
+    list.appendChild(row);
+  });
+  refreshFurnace();
+}
+function refreshFurnace() {
+  document.querySelectorAll('#furnace-list .recipe').forEach((row) => {
+    const s = SMELTS[+row.dataset.si];
+    const ok = canSmelt(inventory, s);
+    row.classList.toggle('disabled', !ok);
+    row.querySelector('.craft-btn').disabled = !ok;
+  });
+}
+function smelt(s) {
+  if (!canSmelt(inventory, s)) return;
+  take(s.in, 1);
+  const fuel = fuelInInv(inventory);
+  if (fuel != null) take(fuel, 1);
+  give(s.out, 1);
+  refreshHotbar();
+  refreshFurnace();
+  flash('Smelted ' + itemName(s.out));
+}
+function openFurnace() {
+  if (!running) return;
+  furnaceOpen = true;
+  onBreakRelease();
+  buildFurnace();
+  $('furnace').classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeFurnace() {
+  furnaceOpen = false;
+  $('furnace').classList.add('hidden');
+  lastTime = performance.now();
+}
+
 function updateStats() {
   if (selectedMode !== 'survival') return;
   const hp = $('health'), hg = $('hunger');
@@ -336,7 +391,7 @@ function setupInput() {
   // ----- keyboard -----
   window.addEventListener('keydown', (e) => {
     keys[e.code] = true;
-    if (e.code === 'Escape') togglePause();
+    if (e.code === 'Escape') { if (furnaceOpen) closeFurnace(); else togglePause(); }
     if (e.code === 'KeyF') player && player.toggleFly();
     if (e.code === 'KeyG') ignitePortal();
     if (e.code.startsWith('Digit')) {
@@ -382,6 +437,7 @@ function setupInput() {
   $('menu-btn').addEventListener('click', togglePause);
   $('resume-btn').addEventListener('click', togglePause);
   $('quit-btn').addEventListener('click', quitToMenu);
+  $('furnace-close').addEventListener('click', closeFurnace);
 
   if (isTouch) setupTouch();
 }
@@ -547,12 +603,15 @@ function doBreakSurvival(hit) {
 }
 
 function placeBlock() {
-  if (!running || paused) return;
+  if (!running || paused || furnaceOpen) return;
+  const hit = raycast();
+  if (!hit) return;
+  // interact with stations instead of placing
+  if (hit.block === BLOCK.FURNACE) { openFurnace(); return; }
+  if (hit.block === BLOCK.CRAFTING_TABLE) { togglePause(); return; }
   const item = activeItem();
   if (!isBlockItem(item) || !PALETTE.includes(item)) return;   // only placeable blocks
   if (selectedMode === 'survival' && !(inventory[item] > 0)) return;
-  const hit = raycast();
-  if (!hit) return;
   const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
   // orient logs along the axis of the clicked face
   let id = item;
@@ -700,6 +759,7 @@ function flash(msg) {
 // ---------------- pause / quit ----------------
 function togglePause() {
   if (!running) return;
+  if (furnaceOpen) { closeFurnace(); return; }
   paused = !paused;
   pauseEl.classList.toggle('hidden', !paused);
   if (paused) {
@@ -711,8 +771,9 @@ function togglePause() {
   }
 }
 function quitToMenu() {
-  running = false; paused = false;
+  running = false; paused = false; furnaceOpen = false;
   pauseEl.classList.add('hidden');
+  $('furnace').classList.add('hidden');
   hudEl.classList.add('hidden');
   touchEl.classList.add('hidden');
   menuEl.classList.remove('hidden');
@@ -725,7 +786,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
-  if (paused) return;
+  if (paused || furnaceOpen) return;
 
   if (!isTouch) readKeyboard();
 

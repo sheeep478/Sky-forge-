@@ -7,8 +7,12 @@ const ITEM = {
   STICK: 100,
   COAL: 101,
   DIAMOND: 102,
+  IRON_INGOT: 103,
+  GOLD_INGOT: 104,
   W_PICK: 110, W_AXE: 111, W_SHOVEL: 112, W_SWORD: 113,
   S_PICK: 120, S_AXE: 121, S_SHOVEL: 122, S_SWORD: 123,
+  I_PICK: 130, I_AXE: 131, I_SHOVEL: 132, I_SWORD: 133,
+  D_PICK: 140, D_AXE: 141, D_SHOVEL: 142, D_SWORD: 143,
 };
 
 // Tool stats: matching a block's preferred tool multiplies mining speed.
@@ -21,12 +25,22 @@ const TOOLS = {
   [ITEM.S_AXE]:    { type: 'axe',     tier: 'stone', speed: 4, attack: 4 },
   [ITEM.S_SHOVEL]: { type: 'shovel',  tier: 'stone', speed: 4, attack: 3 },
   [ITEM.S_SWORD]:  { type: 'sword',   tier: 'stone', speed: 1, attack: 6 },
+  [ITEM.I_PICK]:   { type: 'pickaxe', tier: 'iron',  speed: 6, attack: 4 },
+  [ITEM.I_AXE]:    { type: 'axe',     tier: 'iron',  speed: 6, attack: 5 },
+  [ITEM.I_SHOVEL]: { type: 'shovel',  tier: 'iron',  speed: 6, attack: 4 },
+  [ITEM.I_SWORD]:  { type: 'sword',   tier: 'iron',  speed: 1, attack: 7 },
+  [ITEM.D_PICK]:   { type: 'pickaxe', tier: 'diamond', speed: 8, attack: 5 },
+  [ITEM.D_AXE]:    { type: 'axe',     tier: 'diamond', speed: 8, attack: 6 },
+  [ITEM.D_SHOVEL]: { type: 'shovel',  tier: 'diamond', speed: 8, attack: 5 },
+  [ITEM.D_SWORD]:  { type: 'sword',   tier: 'diamond', speed: 1, attack: 8 },
 };
 
 const ITEM_INFO = {
   [ITEM.STICK]:   { name: 'Stick' },
   [ITEM.COAL]:    { name: 'Coal' },
   [ITEM.DIAMOND]: { name: 'Diamond' },
+  [ITEM.IRON_INGOT]: { name: 'Iron Ingot' },
+  [ITEM.GOLD_INGOT]: { name: 'Gold Ingot' },
   [ITEM.W_PICK]:   { name: 'Wooden Pickaxe' },
   [ITEM.W_AXE]:    { name: 'Wooden Axe' },
   [ITEM.W_SHOVEL]: { name: 'Wooden Shovel' },
@@ -35,6 +49,14 @@ const ITEM_INFO = {
   [ITEM.S_AXE]:    { name: 'Stone Axe' },
   [ITEM.S_SHOVEL]: { name: 'Stone Shovel' },
   [ITEM.S_SWORD]:  { name: 'Stone Sword' },
+  [ITEM.I_PICK]:   { name: 'Iron Pickaxe' },
+  [ITEM.I_AXE]:    { name: 'Iron Axe' },
+  [ITEM.I_SHOVEL]: { name: 'Iron Shovel' },
+  [ITEM.I_SWORD]:  { name: 'Iron Sword' },
+  [ITEM.D_PICK]:   { name: 'Diamond Pickaxe' },
+  [ITEM.D_AXE]:    { name: 'Diamond Axe' },
+  [ITEM.D_SHOVEL]: { name: 'Diamond Shovel' },
+  [ITEM.D_SWORD]:  { name: 'Diamond Sword' },
 };
 
 function isBlockItem(id) { return id < 100; }
@@ -49,7 +71,7 @@ const RECIPES = [
   { out: ITEM.STICK, n: 4, in: [[BLOCK.PLANK, 2]] },
   { out: BLOCK.CRAFTING_TABLE, n: 1, in: [[BLOCK.PLANK, 4]] },
   { out: BLOCK.STONE_BRICK, n: 4, in: [[BLOCK.STONE, 4]] },
-  { out: BLOCK.GLASS, n: 1, in: [[BLOCK.SAND, 1]] },  // "kiln-less" convenience
+  { out: BLOCK.FURNACE, n: 1, in: [[BLOCK.COBBLE, 8]] },
   { out: ITEM.W_PICK, n: 1, in: [[BLOCK.PLANK, 3], [ITEM.STICK, 2]] },
   { out: ITEM.W_AXE, n: 1, in: [[BLOCK.PLANK, 3], [ITEM.STICK, 2]] },
   { out: ITEM.W_SHOVEL, n: 1, in: [[BLOCK.PLANK, 1], [ITEM.STICK, 2]] },
@@ -58,9 +80,28 @@ const RECIPES = [
   { out: ITEM.S_AXE, n: 1, in: [[BLOCK.COBBLE, 3], [ITEM.STICK, 2]] },
   { out: ITEM.S_SHOVEL, n: 1, in: [[BLOCK.COBBLE, 1], [ITEM.STICK, 2]] },
   { out: ITEM.S_SWORD, n: 1, in: [[BLOCK.COBBLE, 2], [ITEM.STICK, 1]] },
+  { out: ITEM.I_PICK, n: 1, in: [[ITEM.IRON_INGOT, 3], [ITEM.STICK, 2]] },
+  { out: ITEM.I_AXE, n: 1, in: [[ITEM.IRON_INGOT, 3], [ITEM.STICK, 2]] },
+  { out: ITEM.I_SHOVEL, n: 1, in: [[ITEM.IRON_INGOT, 1], [ITEM.STICK, 2]] },
+  { out: ITEM.I_SWORD, n: 1, in: [[ITEM.IRON_INGOT, 2], [ITEM.STICK, 1]] },
+  { out: ITEM.D_PICK, n: 1, in: [[ITEM.DIAMOND, 3], [ITEM.STICK, 2]] },
+  { out: ITEM.D_AXE, n: 1, in: [[ITEM.DIAMOND, 3], [ITEM.STICK, 2]] },
+  { out: ITEM.D_SHOVEL, n: 1, in: [[ITEM.DIAMOND, 1], [ITEM.STICK, 2]] },
+  { out: ITEM.D_SWORD, n: 1, in: [[ITEM.DIAMOND, 2], [ITEM.STICK, 1]] },
 ];
 
 function canCraft(inv, r) { return r.in.every(([id, n]) => (inv[id] || 0) >= n); }
+
+// Smelting (furnace). Each smelt needs one input and one unit of fuel.
+const SMELTS = [
+  { in: BLOCK.IRON_ORE, out: ITEM.IRON_INGOT },
+  { in: BLOCK.GOLD_ORE, out: ITEM.GOLD_INGOT },
+  { in: BLOCK.SAND, out: BLOCK.GLASS },
+  { in: BLOCK.COBBLE, out: BLOCK.STONE },
+];
+const FUELS = [ITEM.COAL, BLOCK.PLANK, BLOCK.WOOD];   // priority order, 1 unit each
+function fuelInInv(inv) { return FUELS.find((id) => (inv[id] || 0) > 0); }
+function canSmelt(inv, s) { return (inv[s.in] || 0) > 0 && fuelInInv(inv) != null; }
 
 // Seconds to mine a block while holding `toolItem` (or null/0 for hand).
 function miningTime(blockId, toolItem) {
@@ -115,15 +156,17 @@ function buildItemIcons() {
   _itemIcons[ITEM.STICK] = _icon((x) => { x.fillStyle = '#8a6a3f'; x.save(); x.translate(16, 16); x.rotate(0.7); x.fillRect(-3, -12, 6, 24); x.restore(); });
   _itemIcons[ITEM.COAL] = _icon((x) => { x.fillStyle = '#1c1c1c'; x.beginPath(); x.arc(16, 16, 10, 0, 7); x.fill(); x.fillStyle = '#3a3a3a'; x.fillRect(11, 11, 3, 3); });
   _itemIcons[ITEM.DIAMOND] = _icon((x) => { x.fillStyle = '#4fe0d8'; x.beginPath(); x.moveTo(16, 5); x.lineTo(27, 15); x.lineTo(16, 28); x.lineTo(5, 15); x.closePath(); x.fill(); x.fillStyle = '#bff7f2'; x.fillRect(13, 11, 3, 3); });
-  const woodHead = '#b08a52', stoneHead = '#9a9a9a';
-  _itemIcons[ITEM.W_PICK] = _icon((x) => _tool(x, woodHead, 'pickaxe'));
-  _itemIcons[ITEM.W_AXE] = _icon((x) => _tool(x, woodHead, 'axe'));
-  _itemIcons[ITEM.W_SHOVEL] = _icon((x) => _tool(x, woodHead, 'shovel'));
-  _itemIcons[ITEM.W_SWORD] = _icon((x) => _tool(x, woodHead, 'sword'));
-  _itemIcons[ITEM.S_PICK] = _icon((x) => _tool(x, stoneHead, 'pickaxe'));
-  _itemIcons[ITEM.S_AXE] = _icon((x) => _tool(x, stoneHead, 'axe'));
-  _itemIcons[ITEM.S_SHOVEL] = _icon((x) => _tool(x, stoneHead, 'shovel'));
-  _itemIcons[ITEM.S_SWORD] = _icon((x) => _tool(x, stoneHead, 'sword'));
+  const bar = (x, col, hi) => { x.fillStyle = col; x.fillRect(6, 12, 20, 8); x.fillStyle = hi; x.fillRect(8, 13, 7, 2); };
+  _itemIcons[ITEM.IRON_INGOT] = _icon((x) => bar(x, '#d4d4d4', '#f2f2f2'));
+  _itemIcons[ITEM.GOLD_INGOT] = _icon((x) => bar(x, '#f0c632', '#fff0a0'));
+  const heads = { wood: '#b08a52', stone: '#9a9a9a', iron: '#d8d8d8', diamond: '#4fe0d8' };
+  const toolList = [
+    [ITEM.W_PICK, 'wood', 'pickaxe'], [ITEM.W_AXE, 'wood', 'axe'], [ITEM.W_SHOVEL, 'wood', 'shovel'], [ITEM.W_SWORD, 'wood', 'sword'],
+    [ITEM.S_PICK, 'stone', 'pickaxe'], [ITEM.S_AXE, 'stone', 'axe'], [ITEM.S_SHOVEL, 'stone', 'shovel'], [ITEM.S_SWORD, 'stone', 'sword'],
+    [ITEM.I_PICK, 'iron', 'pickaxe'], [ITEM.I_AXE, 'iron', 'axe'], [ITEM.I_SHOVEL, 'iron', 'shovel'], [ITEM.I_SWORD, 'iron', 'sword'],
+    [ITEM.D_PICK, 'diamond', 'pickaxe'], [ITEM.D_AXE, 'diamond', 'axe'], [ITEM.D_SHOVEL, 'diamond', 'shovel'], [ITEM.D_SWORD, 'diamond', 'sword'],
+  ];
+  for (const [id, tier, type] of toolList) _itemIcons[id] = _icon((x) => _tool(x, heads[tier], type));
 }
 function itemIcon(id) {
   if (isBlockItem(id)) return blockIcon(id);

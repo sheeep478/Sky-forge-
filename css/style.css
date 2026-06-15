@@ -404,3 +404,10 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   font-size: 12px; cursor: pointer;
 }
 .craft-btn:disabled { background: #4a4f5b; cursor: default; }
+
+/* furnace / smelting screen */
+#furnace { background: rgba(10,12,16,0.82); z-index: 61; }
+#furnace .menu-panel { width: min(480px, 94vw); }
+#furnace h2 { margin-bottom: 8px; font-size: 24px; }
+.furnace-note { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+#furnace-list { display: flex; flex-direction: column; gap: 6px; max-height: 44vh; overflow-y: auto; margin-bottom: 16px; }
