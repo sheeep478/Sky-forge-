@@ -53,6 +53,13 @@ let portalCooldown = 0, portalTimer = 0, returnPos = null;
 // mining (hold-to-break) state
 let miningActive = false, miningTarget = null, miningProgress = 0, miningNeeded = 1;
 
+// day/night + combat
+let timeOfDay = 0.25;        // 0..1, starts at morning
+let ambient = null;
+let spawnTimer = 0, hurtCD = 0;
+const DAY_LENGTH = 480;      // seconds for a full day–night cycle
+const NIGHT_MIN = 0.12;      // darkest sky-light multiplier
+
 function startGame() {
   // Engine (Three.js) must be loaded by the CDN bridge first.
   if (typeof THREE === 'undefined' || !window.THREE) {
@@ -108,6 +115,7 @@ function initWorld(seed) {
   health = 20; hunger = 20; lavaTimer = 0;
   miningActive = false; miningTarget = null; miningProgress = 0;
   furnaceOpen = false; $('furnace').classList.add('hidden');
+  timeOfDay = 0.25; spawnTimer = 0; hurtCD = 0;
   buildItemIcons();
   setupInventory();
   buildCrafting();
@@ -151,12 +159,47 @@ function setupRenderer() {
 }
 
 function addLights() {
-  const amb = new THREE.AmbientLight(0xffffff, 0.75);
-  scene.add(amb);
+  ambient = new THREE.AmbientLight(0xffffff, 0.75);
+  scene.add(ambient);
   sun = new THREE.DirectionalLight(0xffffff, 0.7);
   sun.position.set(0.4, 1, 0.25);
   scene.add(sun);
   setDimensionVisuals();
+}
+
+// 0..1 brightness of the sky right now (1 = noon, NIGHT_MIN = midnight)
+function skyBrightness() {
+  const raw = 0.5 + 0.5 * Math.cos((timeOfDay - 0.25) * Math.PI * 2);
+  return NIGHT_MIN + (1 - NIGHT_MIN) * Math.max(0, Math.min(1, (raw - 0.1) / 0.5));
+}
+function isNight() { return (0.5 + 0.5 * Math.cos((timeOfDay - 0.25) * Math.PI * 2)) < 0.22; }
+
+function lerpColor(a, b, t) {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  return ((ar + (br - ar) * t) << 16) | ((ag + (bg - ag) * t) << 8) | (ab + (bb - ab) * t);
+}
+
+function updateDayNight(dt) {
+  timeOfDay = (timeOfDay + dt / DAY_LENGTH) % 1;
+  if (dimension === 'nether') { world.dayUniform.value = 1.0; return; }
+  const b = skyBrightness();
+  world.dayUniform.value = b;
+  ambient.intensity = 0.35 + 0.45 * b;
+  sun.intensity = 0.15 + 0.6 * b;
+  // sky + fog colour: night -> day
+  const t = Math.max(0, Math.min(1, (b - NIGHT_MIN) / (1 - NIGHT_MIN)));
+  const col = lerpColor(0x070b16, 0x8fc7ee, t);
+  scene.background.setHex(col);
+  if (scene.fog) scene.fog.color.setHex(col);
+  // sun rises/sets across the sky
+  const ang = timeOfDay * Math.PI * 2;
+  sun.position.set(Math.cos(ang), Math.max(0.15, Math.sin(ang)), 0.3);
+  updateDayIcon(b);
+}
+function updateDayIcon(b) {
+  const el = $('daynight');
+  if (el) el.textContent = isNight() ? '🌙' : (b > 0.8 ? '☀️' : '🌅');
 }
 
 // Sky colour + fog depend on the current dimension.
@@ -581,7 +624,11 @@ function raycast(maxDist = 6) {
 
 // ---- mining ----
 function onBreakPress() {
-  if (!running || paused) return;
+  if (!running || paused || furnaceOpen) return;
+  // melee first if we're aiming at a mob
+  const t = TOOLS[activeItem()];
+  const dmg = (t && t.attack) || 1;
+  if (mobs.attack(player.getEyePos(), player.getDirection(), 3.2, dmg)) return;
   if (selectedMode === 'creative') { mineInstant(); return; }
   miningActive = true;            // survival: hold to break (handled in loop)
 }
@@ -855,8 +902,30 @@ function loop(now) {
     portalTimer = 0;
   }
 
+  // day/night + lighting
+  updateDayNight(dt);
+
+  // hostile mobs spawn at night in the overworld; burn off at dawn
+  if (dimension === 'overworld') {
+    if (isNight()) {
+      spawnTimer -= dt;
+      const cap = isTouch ? 5 : 9;
+      if (spawnTimer <= 0 && mobs.hostiles.length < cap) {
+        mobs.spawnHostiles(player.pos.x, player.pos.z, 2);
+        spawnTimer = 4 + Math.random() * 4;
+      }
+    } else if (mobs.hostiles.length) {
+      mobs.clearHostiles();      // daylight clears the undead
+    }
+  }
+
   world.update(player.pos.x, player.pos.z);
-  mobs.update(dt);
+  const contact = mobs.update(dt, player.pos);
+  hurtCD -= dt;
+  if (selectedMode === 'survival' && contact > 0 && hurtCD <= 0) {
+    health = Math.max(0, health - contact); updateStats(); hurtCD = 0.5;
+    if (health <= 0) respawn();
+  }
 
   renderer.render(scene, camera);
 }
@@ -873,4 +942,5 @@ function respawn() {
   }
   player.vel.set(0, 0, 0);
   health = 20; hunger = 20; lavaTimer = 0; updateStats();
+  if (mobs) mobs.clearHostiles();
 }

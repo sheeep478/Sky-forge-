@@ -34,14 +34,30 @@ class World {
     this.renderDistance = 4;
 
     const atlas = buildAtlas();
-    this.material = new THREE.MeshBasicMaterial({
-      map: atlas.texture, vertexColors: true,
-    });
+    this.material = new THREE.MeshBasicMaterial({ map: atlas.texture, vertexColors: true });
     this.tMaterial = new THREE.MeshBasicMaterial({
       map: atlas.texture, vertexColors: true,
-      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
-      depthWrite: false,
+      transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false,
     });
+
+    // Shared day-brightness uniform. Final light = max(blockLight, skyLight*uDay),
+    // with a darkness floor so unlit areas stay atmospheric but navigable.
+    this.dayUniform = { value: 1.0 };
+    const FLOOR = 0.1;
+    const patch = (mat) => {
+      mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uDay = this.dayUniform;
+        shader.vertexShader = 'attribute vec2 light;\nvarying vec2 vLight;\n' +
+          shader.vertexShader.replace('#include <begin_vertex>',
+            '#include <begin_vertex>\n  vLight = light;');
+        shader.fragmentShader = 'uniform float uDay;\nvarying vec2 vLight;\n' +
+          shader.fragmentShader.replace('#include <dithering_fragment>',
+            'float _L = max(vLight.y, vLight.x * uDay);\n' +
+            '  _L = mix(' + FLOOR.toFixed(2) + ', 1.0, clamp(_L, 0.0, 1.0));\n' +
+            '  gl_FragColor.rgb *= _L;\n  #include <dithering_fragment>');
+      };
+    };
+    patch(this.material); patch(this.tMaterial);
   }
 
   key(cx, cz) { return cx + ',' + cz; }
@@ -229,45 +245,105 @@ class World {
     }
   }
 
+  // ---- lighting ----
+  // Compute skylight + blocklight for a chunk over a 1-block padded domain.
+  // Returns a lookup: lightAt(wx, wy, wz) -> [sky0..1, block0..1].
+  _computeLight(cx, cz) {
+    const PAD = 1, W = CHUNK + PAD * 2;
+    const ox = cx * CHUNK - PAD, oz = cz * CHUNK - PAD;
+    const sky = new Uint8Array(W * HEIGHT * W);
+    const blk = new Uint8Array(W * HEIGHT * W);
+    const li = (lx, y, lz) => (y * W + lz) * W + lx;
+    const netherBase = this.type === 'nether' ? 6 : 0;
+
+    // skylight: seed cells open to the sky, then flood
+    const qx = [], qy = [], qz = [];
+    for (let lx = 0; lx < W; lx++) {
+      for (let lz = 0; lz < W; lz++) {
+        const wx = ox + lx, wz = oz + lz;
+        let open = this.type !== 'nether';
+        for (let y = HEIGHT - 1; y >= 0; y--) {
+          const b = this.getBlock(wx, y, wz);
+          if (!lightPasses(b)) { open = false; continue; }
+          const v = open ? 15 : netherBase;
+          if (v > 0) { sky[li(lx, y, lz)] = v; qx.push(lx); qy.push(y); qz.push(lz); }
+        }
+      }
+    }
+    this._floodLight(sky, qx, qy, qz, ox, oz, W, li);
+
+    // blocklight: seed emitters, then flood
+    const ex = [], ey = [], ez = [];
+    for (let lx = 0; lx < W; lx++)
+      for (let lz = 0; lz < W; lz++)
+        for (let y = 0; y < HEIGHT; y++) {
+          const e = blockEmit(this.getBlock(ox + lx, y, oz + lz));
+          if (e > 0) { blk[li(lx, y, lz)] = e; ex.push(lx); ey.push(y); ez.push(lz); }
+        }
+    this._floodLight(blk, ex, ey, ez, ox, oz, W, li);
+
+    return (wx, wy, wz) => {
+      const lx = wx - ox, lz = wz - oz, y = Math.max(0, Math.min(HEIGHT - 1, wy));
+      if (lx < 0 || lx >= W || lz < 0 || lz >= W) return [netherBase / 15, 0];
+      const i = li(lx, y, lz);
+      return [sky[i] / 15, blk[i] / 15];
+    };
+  }
+
+  _floodLight(arr, qx, qy, qz, ox, oz, W, li) {
+    const N = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    let head = 0;
+    while (head < qx.length) {
+      const lx = qx[head], y = qy[head], lz = qz[head]; head++;
+      const v = arr[li(lx, y, lz)];
+      if (v <= 1) continue;
+      for (const n of N) {
+        const nlx = lx + n[0], ny = y + n[1], nlz = lz + n[2];
+        if (nlx < 0 || nlx >= W || nlz < 0 || nlz >= W || ny < 0 || ny >= HEIGHT) continue;
+        if (!lightPasses(this.getBlock(ox + nlx, ny, oz + nlz))) continue;
+        const ni = li(nlx, ny, nlz);
+        if (arr[ni] < v - 1) { arr[ni] = v - 1; qx.push(nlx); qy.push(ny); qz.push(nlz); }
+      }
+    }
+  }
+
   // ---- meshing ----
   buildMesh(cx, cz) {
     const ch = this.chunks.get(this.key(cx, cz));
     if (!ch) return;
 
-    const pos = [], col = [], uv = [], idx = [];
-    const tpos = [], tcol = [], tuv = [], tidx = [];
+    const pos = [], col = [], uv = [], lgt = [], idx = [];
+    const tpos = [], tcol = [], tuv = [], tlgt = [], tidx = [];
     const ox = cx * CHUNK, oz = cz * CHUNK;
     const maxY = Math.min(ch.maxY + 1, HEIGHT - 1);
+    const lightAt = this._computeLight(cx, cz);
 
     for (let y = 0; y <= maxY; y++) {
       for (let z = 0; z < CHUNK; z++) {
         for (let x = 0; x < CHUNK; x++) {
           const b = ch.blocks[this._idx(x, y, z)];
           if (b === BLOCK.AIR) continue;
-          const info = BLOCK_INFO[b];
-          // Water, glass and portal use the alpha-blended pass; everything
-          // else (incl. leaves, lava) is opaque but still culls shared faces.
           const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL);
           const wx = ox + x, wz = oz + z;
 
           for (const d of DIRS) {
             const nb = this.getBlock(wx + d.n[0], y + d.n[1], wz + d.n[2]);
             const nInfo = BLOCK_INFO[nb];
-            // draw face if neighbor is air, OR neighbor transparent & different block
             if (nb !== BLOCK.AIR && nInfo && !nInfo.transparent) continue;
             if (nb !== BLOCK.AIR && nInfo && nInfo.transparent && nb === b) continue;
 
             const P = isT ? tpos : pos, C = isT ? tcol : col,
-                  U = isT ? tuv : uv, I = isT ? tidx : idx;
+                  U = isT ? tuv : uv, L = isT ? tlgt : lgt, I = isT ? tidx : idx;
             const start = P.length / 3;
             const uvr = faceUV(b, d.face);
             const br = d.bright;
+            const lt = lightAt(wx + d.n[0], y + d.n[1], wz + d.n[2]);   // light of the air side
             for (let c = 0; c < 4; c++) {
               const cc = d.corners[c];
               P.push(x + cc[0], y + cc[1], z + cc[2]);
               C.push(br, br, br);
+              L.push(lt[0], lt[1]);
             }
-            // uv per corner: order matches corners winding
             U.push(uvr[0], uvr[1], uvr[2], uvr[1], uvr[2], uvr[3], uvr[0], uvr[3]);
             I.push(start, start + 1, start + 2, start, start + 2, start + 3);
           }
@@ -275,27 +351,27 @@ class World {
       }
     }
 
-    // dispose old
     if (ch.mesh) { ch.mesh.geometry.dispose(); this.scene.remove(ch.mesh); ch.mesh = null; }
     if (ch.tmesh) { ch.tmesh.geometry.dispose(); this.scene.remove(ch.tmesh); ch.tmesh = null; }
 
     if (pos.length) {
-      ch.mesh = this._makeMesh(pos, col, uv, idx, this.material);
+      ch.mesh = this._makeMesh(pos, col, uv, lgt, idx, this.material);
       ch.mesh.position.set(ox, 0, oz);
       this.scene.add(ch.mesh);
     }
     if (tpos.length) {
-      ch.tmesh = this._makeMesh(tpos, tcol, tuv, tidx, this.tMaterial);
+      ch.tmesh = this._makeMesh(tpos, tcol, tuv, tlgt, tidx, this.tMaterial);
       ch.tmesh.position.set(ox, 0, oz);
       this.scene.add(ch.tmesh);
     }
   }
 
-  _makeMesh(pos, col, uv, idx, mat) {
+  _makeMesh(pos, col, uv, lgt, idx, mat) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('light', new THREE.Float32BufferAttribute(lgt, 2));
     g.setIndex(idx);
     return new THREE.Mesh(g, mat);
   }

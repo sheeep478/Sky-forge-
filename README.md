@@ -23,6 +23,8 @@ Build, mine, and explore procedurally generated blocky worlds with passive anima
 - **Mining, tools & crafting** — blocks have hardness; hold to break them. The right tool (pickaxe / axe / shovel) mines faster, and stone & ores only drop when mined with a pickaxe. Mine logs → craft planks → sticks → tools in the crafting menu (☰).
 - **Furnace & smelting** — craft a furnace (8 cobblestone) and interact with it (▣ / right-click) to smelt: iron/gold ore → ingots, sand → glass, cobble → stone. Smelting burns fuel (coal, planks or logs).
 - **Four tool tiers** — wooden, stone, **iron** (from smelted ingots) and **diamond** (from mined diamonds) pickaxes, axes, shovels and swords, each faster than the last.
+- **Day/night cycle & lighting** — a real per-block light system: the sky brightens and darkens over an ~8-minute cycle, caves are dark, and **torches** (craft from coal + stick), glowstone and lava cast light that falls off with distance.
+- **Hostile mobs & combat** — **zombies** spawn at night, chase you and deal damage; they burn off at dawn. Fight back with the break action — **swords** hit hardest — with knockback and health bars.
 - **3 passive mobs** — 🐷 Pig, 🐮 Cow, 🐔 Chicken — boxy models that wander, follow the terrain, and animate as they walk.
 - **Full mobile support** — on-screen joystick, look-to-drag, and jump / place / break buttons. Desktop gets mouse-look + keyboard.
 - **A proper main menu** to pick mode, world type and seed, plus an in-game pause/inventory screen.

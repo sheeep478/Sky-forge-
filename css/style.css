@@ -262,7 +262,8 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   .slot .swatch { width: 24px; height: 24px; }
 }
 
-#top-controls { position: absolute; top: 14px; right: 14px; display: flex; gap: 8px; pointer-events: auto; }
+#top-controls { position: absolute; top: 14px; right: 14px; display: flex; gap: 8px; align-items: center; pointer-events: auto; }
+#daynight { font-size: 24px; filter: drop-shadow(0 1px 2px #000); }
 .icon-btn {
   width: 44px; height: 44px;
   background: rgba(0,0,0,0.4);
