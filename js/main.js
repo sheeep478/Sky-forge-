@@ -102,7 +102,12 @@ function initWorld(seed) {
     (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' + selectedWorld;
   $('stats').style.display = selectedMode === 'survival' ? 'flex' : 'none';
 
-  if (isTouch) touchEl.classList.remove('hidden');
+  if (isTouch) {
+    touchEl.classList.remove('hidden');
+    const h = $('touch-hint');
+    h.classList.remove('hidden'); h.style.opacity = '1';
+    setTimeout(hideHint, 6000);
+  }
 
   running = true; paused = false;
   lastTime = performance.now();
@@ -275,45 +280,46 @@ function readKeyboard() {
 }
 
 // ----- touch controls -----
+// Left half of the screen = a dynamic thumbstick that appears wherever you
+// press (up on the stick = forward, relative to the camera). Right half =
+// drag to look. Action buttons handle themselves.
 function setupTouch() {
   const joy = $('joystick'), knob = $('joystick-knob');
-  let joyId = null, jcx = 0, jcy = 0;
-  const R = 50;
+  const R = 55, DEAD = 0.2, LOOK_SENS = 0.9;
 
-  const startJoy = (t) => {
-    joyId = t.identifier;
-    const r = joy.getBoundingClientRect();
-    jcx = r.left + r.width / 2; jcy = r.top + r.height / 2;
+  let moveId = null, moveOX = 0, moveOY = 0;
+  let lookId = null, lastLX = 0, lastLY = 0;
+
+  const showJoy = (x, y) => {
+    joy.style.left = x + 'px'; joy.style.top = y + 'px';
+    joy.classList.add('active');
+    knob.style.transform = 'translate(0,0)';
   };
-  const DEAD = 0.18;                 // ignore tiny wobble near the centre
-  const moveJoy = (t) => {
-    let dx = t.clientX - jcx, dy = t.clientY - jcy;
+  const updateJoy = (x, y) => {
+    let dx = x - moveOX, dy = y - moveOY;
     const d = Math.hypot(dx, dy);
     if (d > R) { dx = dx / d * R; dy = dy / d * R; }
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
     const mx = dx / R, mz = dy / R;
     if (Math.hypot(mx, mz) < DEAD) { input.mx = 0; input.mz = 0; }
     else { input.mx = mx; input.mz = mz; }
-    input.sprint = d > R * 0.85;
+    input.sprint = d > R * 0.9;
   };
   const endJoy = () => {
-    joyId = null; knob.style.transform = 'translate(0,0)';
+    moveId = null; joy.classList.remove('active');
     input.mx = 0; input.mz = 0; input.sprint = false;
   };
 
-  joy.addEventListener('touchstart', (e) => {
-    e.preventDefault(); startJoy(e.changedTouches[0]); moveJoy(e.changedTouches[0]);
-  }, { passive: false });
-
-  // global touch handling: any touch that isn't on the joystick or a button
-  // becomes a look-drag. (Restricting look to one side felt unresponsive.)
-  const LOOK_SENS = 0.9;
-  let lookId = null, lastLX = 0, lastLY = 0;
   window.addEventListener('touchstart', (e) => {
     if (!running || paused) return;
+    hideHint();
     for (const t of e.changedTouches) {
-      if (joyId === null && isInside(joy, t)) { startJoy(t); moveJoy(t); continue; }
-      if (lookId === null && !isInside(joy, t) && !isOnButton(t)) {
+      if (isOnButton(t)) continue;                         // buttons/hotbar self-handle
+      if (moveId === null && t.clientX < window.innerWidth * 0.5) {
+        moveId = t.identifier; moveOX = t.clientX; moveOY = t.clientY;
+        showJoy(t.clientX, t.clientY); updateJoy(t.clientX, t.clientY);
+        e.preventDefault();
+      } else if (lookId === null) {
         lookId = t.identifier; lastLX = t.clientX; lastLY = t.clientY;
       }
     }
@@ -321,7 +327,7 @@ function setupTouch() {
   window.addEventListener('touchmove', (e) => {
     if (!running || paused) return;
     for (const t of e.changedTouches) {
-      if (t.identifier === joyId) { e.preventDefault(); moveJoy(t); }
+      if (t.identifier === moveId) { e.preventDefault(); updateJoy(t.clientX, t.clientY); }
       else if (t.identifier === lookId && player) {
         e.preventDefault();
         player.look((t.clientX - lastLX) * LOOK_SENS, (t.clientY - lastLY) * LOOK_SENS);
@@ -331,7 +337,7 @@ function setupTouch() {
   }, { passive: false });
   const endTouch = (e) => {
     for (const t of e.changedTouches) {
-      if (t.identifier === joyId) endJoy();
+      if (t.identifier === moveId) endJoy();
       if (t.identifier === lookId) lookId = null;
     }
   };
@@ -350,9 +356,12 @@ function setupTouch() {
   $('btn-place').addEventListener('touchstart', (e) => { e.preventDefault(); placeBlock(); }, { passive: false });
   $('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); breakBlock(); }, { passive: false });
 }
-function isInside(el, t) {
-  const r = el.getBoundingClientRect();
-  return t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
+function hideHint() {
+  const h = $('touch-hint');
+  if (h && !h.classList.contains('hidden')) {
+    h.style.opacity = '0';
+    setTimeout(() => h.classList.add('hidden'), 400);
+  }
 }
 function isOnButton(t) {
   const el = document.elementFromPoint(t.clientX, t.clientY);

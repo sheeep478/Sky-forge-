@@ -222,15 +222,19 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 }
 
 /* ===================== TOUCH CONTROLS ===================== */
+/* Dynamic thumbstick: appears under the thumb on touch (left half of screen) */
 #joystick {
-  position: absolute; left: 24px; bottom: 90px;
+  position: absolute; left: 80px; top: 50%;
   width: 130px; height: 130px;
-  background: rgba(255,255,255,0.08);
-  border: 2px solid rgba(255,255,255,0.25);
+  margin-left: -65px; margin-top: -65px;
+  background: rgba(255,255,255,0.10);
+  border: 2px solid rgba(255,255,255,0.30);
   border-radius: 50%;
-  pointer-events: auto;
+  pointer-events: none;
   touch-action: none;
+  display: none;
 }
+#joystick.active { display: block; }
 #joystick-knob {
   position: absolute; left: 50%; top: 50%;
   width: 56px; height: 56px;
@@ -261,6 +265,20 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 #btn-jump  { grid-column: 2; grid-row: 1; }
 #btn-place { grid-column: 1; grid-row: 2; }
 #btn-break { grid-column: 2; grid-row: 2; }
+
+#touch-hint {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.75);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 12px;
+  padding: 16px 20px;
+  text-align: center; line-height: 1.7;
+  font-size: 14px; max-width: 80vw;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+#touch-hint b { color: var(--accent); }
 
 /* ===================== PAUSE / INVENTORY ===================== */
 #pause { background: rgba(10,12,16,0.82); z-index: 60; }
