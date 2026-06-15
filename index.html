@@ -12,9 +12,10 @@
 <body>
   <!-- ===================== MAIN MENU ===================== -->
   <div id="menu" class="screen">
+    <div class="menu-bg"><span></span><span></span><span></span><span></span><span></span><span></span></div>
     <div class="menu-panel">
       <h1 class="logo">SKY<span>FORGE</span></h1>
-      <p class="tagline">Build. Survive. Explore.</p>
+      <p class="tagline">Build · Survive · Explore · Forge a Portal</p>
 
       <div class="menu-section">
         <label class="field-label">Game Mode</label>
@@ -40,9 +41,19 @@
 
       <button id="play-btn" class="play-btn">▶ Create World</button>
 
+      <details class="help">
+        <summary>How to play</summary>
+        <div class="help-body">
+          <p><b>Move</b> with WASD or the left thumbstick · <b>look</b> with the mouse or by dragging.</p>
+          <p><b>Break</b> / <b>place</b> blocks to build. Pick blocks from the hotbar (1-9 or tap).</p>
+          <p><b>Logs</b> face the way you place them. <b>Creative</b>: double-tap jump to fly.</p>
+          <p>🔥 <b>Nether portal:</b> build a 4×5 obsidian frame, then light it (press <b>G</b> / 🔥) and step through.</p>
+        </div>
+      </details>
+
       <p class="hint" id="device-hint"></p>
     </div>
-    <div class="credits">A tiny Minecraft-like sandbox · WASD/Touch to move</div>
+    <div class="credits">A tiny Minecraft-like sandbox</div>
   </div>
 
   <!-- ===================== LOADING ===================== -->
@@ -72,18 +83,20 @@
     </div>
 
     <div id="mode-indicator"></div>
+    <div id="toast" class="hidden"></div>
 
     <!-- Mobile touch controls -->
     <div id="touch-controls" class="hidden">
       <div id="touch-hint" class="hidden">
         <b>Left side</b> — drag to move<br>
         <b>Right side</b> — drag to look<br>
-        <b>Buttons</b> — jump · place · break
+        <b>Buttons</b> — jump · place · break · light portal
       </div>
       <div id="joystick">
         <div id="joystick-knob"></div>
       </div>
       <div id="action-buttons">
+        <button class="touch-btn" id="btn-ignite" title="Light portal">🔥</button>
         <button class="touch-btn" id="btn-jump">⤒</button>
         <button class="touch-btn" id="btn-place">▣</button>
         <button class="touch-btn" id="btn-break">⛏</button>

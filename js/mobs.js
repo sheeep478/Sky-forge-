@@ -176,4 +176,7 @@ class MobManager {
     for (const m of this.mobs) m.dispose(this.scene);
     this.mobs = [];
   }
+
+  hide() { for (const m of this.mobs) this.scene.remove(m.obj); }
+  show() { for (const m of this.mobs) this.scene.add(m.obj); }
 }

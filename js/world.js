@@ -8,19 +8,19 @@ const CHUNK = 16;          // chunk width/depth in blocks
 const HEIGHT = 64;         // world height in blocks
 const SEA_LEVEL = 24;
 
-// Six face directions: [normal, brightness]
+// Six face directions, each tagged with a face code (py/ny/px/nx/pz/nz).
 const DIRS = [
-  { n: [0, 1, 0], name: 'top', bright: 1.0,
+  { n: [0, 1, 0], face: 'py', bright: 1.0,
     corners: [[0,1,0],[0,1,1],[1,1,1],[1,1,0]] },
-  { n: [0, -1, 0], name: 'bottom', bright: 0.5,
+  { n: [0, -1, 0], face: 'ny', bright: 0.5,
     corners: [[0,0,1],[0,0,0],[1,0,0],[1,0,1]] },
-  { n: [0, 0, 1], name: 'side', bright: 0.8,
+  { n: [0, 0, 1], face: 'pz', bright: 0.8,
     corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]] },
-  { n: [0, 0, -1], name: 'side', bright: 0.8,
+  { n: [0, 0, -1], face: 'nz', bright: 0.8,
     corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]] },
-  { n: [1, 0, 0], name: 'side', bright: 0.65,
+  { n: [1, 0, 0], face: 'px', bright: 0.65,
     corners: [[1,0,1],[1,0,0],[1,1,0],[1,1,1]] },
-  { n: [-1, 0, 0], name: 'side', bright: 0.65,
+  { n: [-1, 0, 0], face: 'nx', bright: 0.65,
     corners: [[0,0,0],[0,0,1],[0,1,1],[0,1,0]] },
 ];
 
@@ -93,6 +93,7 @@ class World {
   generate(cx, cz, ch) {
     if (this.type === 'flat') return this._genFlat(ch);
     if (this.type === 'skyblock') return this._genSkyblock(cx, cz, ch);
+    if (this.type === 'nether') return this._genNether(cx, cz, ch);
     return this._genRegular(cx, cz, ch);
   }
 
@@ -147,6 +148,14 @@ class World {
             else block = BLOCK.GRASS;
           } else if (y > height - 4) {
             block = (height < SEA_LEVEL + 1) ? BLOCK.SAND : BLOCK.DIRT;
+          } else {
+            // ores embedded in stone, rarer/deeper for valuable ones
+            const r = rnd();
+            if (y < 13 && r < 0.0016) block = BLOCK.DIAMOND_ORE;
+            else if (y < 20 && r < 0.004) block = BLOCK.GOLD_ORE;
+            else if (r < 0.012) block = BLOCK.IRON_ORE;
+            else if (r < 0.03) block = BLOCK.COAL_ORE;
+            else if (r < 0.04) block = BLOCK.GRAVEL;
           }
           this._set(ch, x, y, z, block);
         }
@@ -177,6 +186,49 @@ class World {
     this._set(ch, x, top + 1, z, BLOCK.LEAVES);
   }
 
+  // The Nether: netherrack floor with lava lakes, a netherrack ceiling,
+  // glowstone clusters, and bedrock caps top & bottom.
+  _genNether(cx, cz, ch) {
+    const rnd = mulberry32((this.seed ^ (cx * 19349663) ^ (cz * 83492791)) >>> 0);
+    const CEIL = 46, FLOOR_LAVA = 14;
+    for (let x = 0; x < CHUNK; x++) {
+      for (let z = 0; z < CHUNK; z++) {
+        const wx = cx * CHUNK + x, wz = cz * CHUNK + z;
+        const h = Math.floor(18 + this.noise.fbm(wx, wz, 3, 0.5, 0.05) * 12);  // floor height ~18-30
+        for (let y = 0; y <= h; y++) {
+          let block = BLOCK.NETHERRACK;
+          if (y === 0) block = BLOCK.BEDROCK;
+          this._set(ch, x, y, z, block);
+        }
+        // lava lakes in low pockets
+        for (let y = h + 1; y <= FLOOR_LAVA; y++) this._set(ch, x, y, z, BLOCK.LAVA);
+        // ceiling
+        for (let y = CEIL; y < HEIGHT; y++) {
+          this._set(ch, x, y, z, y === HEIGHT - 1 ? BLOCK.BEDROCK : BLOCK.NETHERRACK);
+        }
+        // glowstone clusters hanging from the ceiling
+        if (rnd() < 0.02) {
+          const len = 1 + (rnd() * 3 | 0);
+          for (let i = 0; i < len; i++) this._set(ch, x, CEIL - 1 - i, z, BLOCK.GLOWSTONE);
+        }
+      }
+    }
+  }
+
+  // ---- dimension visibility (overworld <-> nether) ----
+  hide() {
+    for (const [, ch] of this.chunks) {
+      if (ch.mesh) this.scene.remove(ch.mesh);
+      if (ch.tmesh) this.scene.remove(ch.tmesh);
+    }
+  }
+  show() {
+    for (const [, ch] of this.chunks) {
+      if (ch.mesh) this.scene.add(ch.mesh);
+      if (ch.tmesh) this.scene.add(ch.tmesh);
+    }
+  }
+
   // ---- meshing ----
   buildMesh(cx, cz) {
     const ch = this.chunks.get(this.key(cx, cz));
@@ -193,9 +245,9 @@ class World {
           const b = ch.blocks[this._idx(x, y, z)];
           if (b === BLOCK.AIR) continue;
           const info = BLOCK_INFO[b];
-          // Only water & glass use the alpha-blended pass; leaves stay opaque
-          // (but still cull their shared interior faces via the transparent flag).
-          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS);
+          // Water, glass and portal use the alpha-blended pass; everything
+          // else (incl. leaves, lava) is opaque but still culls shared faces.
+          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL);
           const wx = ox + x, wz = oz + z;
 
           for (const d of DIRS) {
@@ -208,7 +260,7 @@ class World {
             const P = isT ? tpos : pos, C = isT ? tcol : col,
                   U = isT ? tuv : uv, I = isT ? tidx : idx;
             const start = P.length / 3;
-            const uvr = faceUV(b, d.name === 'top' || d.name === 'bottom' ? d.name : 'side');
+            const uvr = faceUV(b, d.face);
             const br = d.bright;
             for (let c = 0; c < 4; c++) {
               const cc = d.corners[c];
@@ -305,5 +357,23 @@ class World {
       if (b !== BLOCK.AIR && BLOCK_INFO[b] && BLOCK_INFO[b].solid) return y + 1;
     }
     return SEA_LEVEL + 2;
+  }
+
+  // find the floor (top of first solid) scanning DOWN from fromY — used in the
+  // Nether, where surfaceY would land on the ceiling.
+  floorY(wx, wz, fromY = 40) {
+    for (let y = Math.min(fromY, HEIGHT - 1); y >= 0; y--) {
+      if (this.isSolid(wx, y, wz) && !this.isSolid(wx, y + 1, wz)) return y + 1;
+    }
+    return 2;
+  }
+
+  // rebuild meshes covering a world-space box (plus a one-chunk margin).
+  remeshArea(wxMin, wxMax, wzMin, wzMax) {
+    const cx0 = Math.floor(wxMin / CHUNK) - 1, cx1 = Math.floor(wxMax / CHUNK) + 1;
+    const cz0 = Math.floor(wzMin / CHUNK) - 1, cz1 = Math.floor(wzMax / CHUNK) + 1;
+    for (let cx = cx0; cx <= cx1; cx++)
+      for (let cz = cz0; cz <= cz1; cz++)
+        if (this.chunks.has(this.key(cx, cz))) this.buildMesh(cx, cz);
   }
 }

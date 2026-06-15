@@ -11,12 +11,15 @@ Build, mine, and explore procedurally generated blocky worlds with passive anima
 - **Two game modes**
   - **Survival** — health & hunger, fall damage, a starter kit, blocks go into your inventory when mined, limited stacks.
   - **Creative** — fly (double-tap *Space* / long-press jump on mobile), unlimited blocks, no damage.
-- **Three world types**
-  - **Regular** — rolling procedural terrain with hills, water, beaches and trees.
+- **Three world types** (plus a hidden fourth — the Nether)
+  - **Regular** — rolling procedural terrain with hills, water, beaches, trees and underground ores.
   - **Flat** — a clean superflat canvas for building.
   - **Skyblock** — a single floating island in the void. Survive with what you have.
+- **Nether portals** — build a 4×5 obsidian frame, light it (press **G** / the 🔥 button), and step through to travel to a fiery Nether dimension of netherrack, lava lakes and glowstone. Step back through to return.
 - **Seeded worlds** — type a seed for a reproducible world, or leave it blank for a random one.
-- **11 block types** with procedurally generated pixel-art textures (grass, dirt, stone, cobble, sand, wood, planks, leaves, glass, bricks, snow) plus water and bedrock.
+- **20+ block types** with procedurally generated pixel-art textures — grass, dirt, stone, cobble, mossy cobble, stone bricks, sand, gravel, planks, leaves, glass, bricks, snow, coal/iron/gold/diamond ore, obsidian, netherrack, glowstone — plus water, lava and bedrock.
+- **Oriented logs** — logs face the direction you place them (vertical, or lying along X/Z).
+- **Texture item icons** — the hotbar and inventory show each block's actual texture.
 - **3 passive mobs** — 🐷 Pig, 🐮 Cow, 🐔 Chicken — boxy models that wander, follow the terrain, and animate as they walk.
 - **Full mobile support** — on-screen joystick, look-to-drag, and jump / place / break buttons. Desktop gets mouse-look + keyboard.
 - **A proper main menu** to pick mode, world type and seed, plus an in-game pause/inventory screen.

@@ -30,8 +30,8 @@ wireGroup('mode-group', 'mode', (v) => (selectedMode = v));
 wireGroup('world-group', 'world', (v) => (selectedWorld = v));
 
 $('device-hint').textContent = isTouch
-  ? 'Touch device: use the on-screen joystick and buttons.'
-  : 'Desktop: click to lock mouse · WASD move · Space jump · 1-9 blocks';
+  ? 'Touch device: drag left to move, right to look. 🔥 lights portals.'
+  : 'Desktop: click to lock mouse · WASD · Space jump · 1-9 blocks · G lights portal';
 
 $('play-btn').addEventListener('click', startGame);
 
@@ -43,7 +43,12 @@ let hotbarIndex = 0;
 const input = { mx: 0, mz: 0, jump: false, sprint: false, up: false, down: false };
 
 // survival stats
-let health = 20, hunger = 20, hungerTimer = 0, regenTimer = 0;
+let health = 20, hunger = 20, hungerTimer = 0, regenTimer = 0, lavaTimer = 0;
+
+// dimensions (overworld <-> nether)
+let gameSeed = 0, dimension = 'overworld';
+let overworld = null, netherWorld = null, overworldMobs = null, netherMobs = null;
+let portalCooldown = 0, portalTimer = 0, returnPos = null;
 
 function startGame() {
   // Engine (Three.js) must be loaded by the CDN bridge first.
@@ -64,14 +69,20 @@ function startGame() {
 function initWorld(seed) {
   if (!renderer) setupRenderer();
 
-  // reset scene contents
-  if (world) { for (const [, ch] of world.chunks) { if (ch.mesh) scene.remove(ch.mesh); if (ch.tmesh) scene.remove(ch.tmesh); } }
-  if (mobs) mobs.clear();
+  // reset scene contents (both dimensions)
+  if (overworld) overworld.hide();
+  if (netherWorld) netherWorld.hide();
+  if (overworldMobs) overworldMobs.clear();
+  if (netherMobs) netherMobs.clear();
+  netherWorld = null; netherMobs = null;
+  dimension = 'overworld'; portalCooldown = 0; portalTimer = 0; returnPos = null;
 
   scene.clear();
+  gameSeed = seed >>> 0;
   addLights();
 
   world = new World(scene, seed, selectedWorld);
+  overworld = world;
   if (isTouch) world.renderDistance = 3;   // lighter for mobile
 
   // spawn position
@@ -86,11 +97,12 @@ function initWorld(seed) {
   player.setMode(selectedMode === 'creative');
 
   mobs = new MobManager(world, scene);
+  overworldMobs = mobs;
   if (selectedWorld !== 'skyblock') mobs.spawnInitial(sx, sz, isTouch ? 5 : 8, 16);
   else mobs.spawnInitial(sx, sz, 3, 3);   // keep animals on the tiny island
 
   // reset survival
-  health = 20; hunger = 20;
+  health = 20; hunger = 20; lavaTimer = 0;
   buildHotbar();
   buildInventory();
   updateStats();
@@ -134,16 +146,34 @@ function setupRenderer() {
 }
 
 function addLights() {
-  scene.background = new THREE.Color(0x8fc7ee);
-  scene.fog = new THREE.Fog(0x8fc7ee, CHUNK * 2.5, CHUNK * (isTouch ? 3.2 : 4.2));
   const amb = new THREE.AmbientLight(0xffffff, 0.75);
   scene.add(amb);
   sun = new THREE.DirectionalLight(0xffffff, 0.7);
   sun.position.set(0.4, 1, 0.25);
   scene.add(sun);
+  setDimensionVisuals();
+}
+
+// Sky colour + fog depend on the current dimension.
+function setDimensionVisuals() {
+  if (dimension === 'nether') {
+    scene.background = new THREE.Color(0x2a0d0d);
+    scene.fog = new THREE.Fog(0x2a0d0d, CHUNK * 1.4, CHUNK * (isTouch ? 2.6 : 3.4));
+  } else {
+    scene.background = new THREE.Color(0x8fc7ee);
+    scene.fog = new THREE.Fog(0x8fc7ee, CHUNK * 2.5, CHUNK * (isTouch ? 3.2 : 4.2));
+  }
 }
 
 // ---------------- HUD ----------------
+function swatchStyle(id) {
+  const icon = blockIcon(id);
+  const bg = icon
+    ? `background-image:url('${icon}');background-size:cover;`
+    : `background:${BLOCK_INFO[id].color};`;
+  return `${bg}background-color:${BLOCK_INFO[id].color};`;
+}
+
 function buildHotbar() {
   const hb = $('hotbar');
   hb.innerHTML = '';
@@ -152,7 +182,7 @@ function buildHotbar() {
     slot.className = 'slot' + (i === hotbarIndex ? ' active' : '');
     slot.innerHTML =
       `<span class="name">${BLOCK_INFO[id].name}</span>` +
-      `<div class="swatch" style="background:${BLOCK_INFO[id].color}"></div>` +
+      `<div class="swatch" style="${swatchStyle(id)}"></div>` +
       `<span class="count" data-count="${id}"></span>`;
     slot.addEventListener('click', () => selectHotbar(i));
     hb.appendChild(slot);
@@ -162,8 +192,11 @@ function buildHotbar() {
 
 function selectHotbar(i) {
   hotbarIndex = (i + PALETTE.length) % PALETTE.length;
-  $('hotbar').querySelectorAll('.slot').forEach((s, idx) =>
+  const hb = $('hotbar');
+  hb.querySelectorAll('.slot').forEach((s, idx) =>
     s.classList.toggle('active', idx === hotbarIndex));
+  const s = hb.children[hotbarIndex];
+  if (s) hb.scrollLeft = s.offsetLeft - hb.clientWidth / 2 + s.clientWidth / 2;
 }
 
 // inventory counts (survival)
@@ -190,8 +223,8 @@ function buildInventory() {
   PALETTE.forEach((id, i) => {
     const it = document.createElement('div');
     it.className = 'inv-item';
-    it.innerHTML = `<div class="swatch" style="background:${BLOCK_INFO[id].color}"></div>${BLOCK_INFO[id].name}`;
-    it.addEventListener('click', () => { selectHotbar(i); });
+    it.innerHTML = `<div class="swatch" style="${swatchStyle(id)}"></div>${BLOCK_INFO[id].name}`;
+    it.addEventListener('click', () => { selectHotbar(i); togglePause(); });
     grid.appendChild(it);
   });
 }
@@ -219,6 +252,7 @@ function setupInput() {
     keys[e.code] = true;
     if (e.code === 'Escape') togglePause();
     if (e.code === 'KeyF') player && player.toggleFly();
+    if (e.code === 'KeyG') ignitePortal();
     if (e.code.startsWith('Digit')) {
       const n = +e.code.slice(5);
       if (n >= 1 && n <= PALETTE.length) selectHotbar(n - 1);
@@ -355,6 +389,7 @@ function setupTouch() {
 
   $('btn-place').addEventListener('touchstart', (e) => { e.preventDefault(); placeBlock(); }, { passive: false });
   $('btn-break').addEventListener('touchstart', (e) => { e.preventDefault(); breakBlock(); }, { passive: false });
+  $('btn-ignite').addEventListener('touchstart', (e) => { e.preventDefault(); ignitePortal(); }, { passive: false });
 }
 function hideHint() {
   const h = $('touch-hint');
@@ -407,9 +442,11 @@ function breakBlock() {
   const info = BLOCK_INFO[hit.block];
   if (info.unbreakable) return;
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
-  // collect into inventory (survival), skip water
-  if (selectedMode === 'survival' && !info.liquid && PALETTE.includes(hit.block)) {
-    inventory[hit.block] = (inventory[hit.block] || 0) + 1;
+  // collect into inventory (survival); oriented logs drop a plain log
+  let drop = hit.block;
+  if (drop === BLOCK.WOOD_X || drop === BLOCK.WOOD_Z) drop = BLOCK.WOOD;
+  if (selectedMode === 'survival' && !info.liquid && PALETTE.includes(drop)) {
+    inventory[drop] = (inventory[drop] || 0) + 1;
     refreshCounts();
   }
 }
@@ -419,17 +456,24 @@ function placeBlock() {
   const hit = raycast();
   if (!hit) return;
   const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
-  const id = PALETTE[hotbarIndex];
-  // inventory check
+  const baseId = PALETTE[hotbarIndex];
+  // inventory check (logs are tracked as the plain WOOD item)
   if (selectedMode === 'survival') {
-    if (!inventory[id] || inventory[id] <= 0) return;
+    if (!inventory[baseId] || inventory[baseId] <= 0) return;
+  }
+  // orient logs along the axis of the face you clicked
+  let id = baseId;
+  if (baseId === BLOCK.WOOD) {
+    if (hit.nx !== 0) id = BLOCK.WOOD_X;
+    else if (hit.nz !== 0) id = BLOCK.WOOD_Z;
+    else id = BLOCK.WOOD;
   }
   // don't place inside the player's body
   if (overlapsPlayer(px, py, pz)) return;
   if (world.getBlock(px, py, pz) !== BLOCK.AIR) return;
   world.setBlock(px, py, pz, id);
-  if (selectedMode === 'survival' && inventory[id] !== Infinity) {
-    inventory[id]--; refreshCounts();
+  if (selectedMode === 'survival' && inventory[baseId] !== Infinity) {
+    inventory[baseId]--; refreshCounts();
   }
 }
 
@@ -438,6 +482,121 @@ function overlapsPlayer(bx, by, bz) {
   const minX = p.x - 0.3, maxX = p.x + 0.3, minZ = p.z - 0.3, maxZ = p.z + 0.3;
   const minY = p.y, maxY = p.y + 1.8;
   return bx + 1 > minX && bx < maxX && bz + 1 > minZ && bz < maxZ && by + 1 > minY && by < maxY;
+}
+
+// ---------------- nether portal ----------------
+// Detect a rectangular air area enclosed by obsidian, in a vertical plane.
+function findPortalArea(w, ix, iy, iz) {
+  if (w.getBlock(ix, iy, iz) !== BLOCK.AIR) return null;
+  for (const plane of ['z', 'x']) {
+    const fixed = plane === 'z' ? iz : ix;
+    const a0 = plane === 'z' ? ix : iz;
+    const get = (a, b) => plane === 'z' ? w.getBlock(a, b, fixed) : w.getBlock(fixed, b, a);
+
+    // bounded scans — never run past the max portal size (prevents hangs when
+    // a plane is open air with no enclosing obsidian)
+    const LIM = 23;
+    let left = a0, n = 0; while (get(left - 1, iy) === BLOCK.AIR && n++ < LIM) left--;
+    let right = a0; n = 0; while (get(right + 1, iy) === BLOCK.AIR && n++ < LIM) right++;
+    let bot = iy; n = 0; while (get(a0, bot - 1) === BLOCK.AIR && n++ < LIM) bot--;
+    let top = iy; n = 0; while (get(a0, top + 1) === BLOCK.AIR && n++ < LIM) top++;
+    const width = right - left + 1, height = top - bot + 1;
+    if (width < 2 || width > 21 || height < 3 || height > 21) continue;
+
+    let ok = true;
+    for (let a = left; a <= right && ok; a++)
+      for (let b = bot; b <= top; b++)
+        if (get(a, b) !== BLOCK.AIR) ok = false;
+    for (let b = bot; b <= top && ok; b++)
+      if (get(left - 1, b) !== BLOCK.OBSIDIAN || get(right + 1, b) !== BLOCK.OBSIDIAN) ok = false;
+    for (let a = left; a <= right && ok; a++)
+      if (get(a, bot - 1) !== BLOCK.OBSIDIAN || get(a, top + 1) !== BLOCK.OBSIDIAN) ok = false;
+    if (!ok) continue;
+
+    const cells = [];
+    for (let a = left; a <= right; a++)
+      for (let b = bot; b <= top; b++)
+        cells.push(plane === 'z' ? [a, b, fixed] : [fixed, b, a]);
+    return {
+      cells,
+      minX: plane === 'z' ? left : fixed, maxX: plane === 'z' ? right : fixed,
+      minZ: plane === 'z' ? fixed : left, maxZ: plane === 'z' ? fixed : right,
+    };
+  }
+  return null;
+}
+
+function ignitePortal() {
+  if (!running || paused) return;
+  const hit = raycast(6);
+  if (!hit || hit.block !== BLOCK.OBSIDIAN) { flash('Aim at an obsidian frame'); return; }
+  const ix = hit.x + hit.nx, iy = hit.y + hit.ny, iz = hit.z + hit.nz;
+  const area = findPortalArea(world, ix, iy, iz);
+  if (!area) { flash('No valid portal frame'); return; }
+  for (const c of area.cells) world.setBlock(c[0], c[1], c[2], BLOCK.PORTAL, false);
+  world.remeshArea(area.minX, area.maxX, area.minZ, area.maxZ);
+  flash('Portal lit! Step through…');
+}
+
+// Build a ready-made 4x5 obsidian portal (2x3 interior) at a destination.
+function buildPortalStructure(w, bx, by, bz) {
+  for (let x = bx - 1; x <= bx + 2; x++)
+    for (let y = by - 1; y <= by + 3; y++) {
+      const edge = (x === bx - 1 || x === bx + 2 || y === by - 1 || y === by + 3);
+      if (edge) w.setBlock(x, y, bz, BLOCK.OBSIDIAN, false);
+      else w.setBlock(x, y, bz, BLOCK.PORTAL, false);
+    }
+  // clear standing room in front of the portal
+  for (let x = bx - 1; x <= bx + 2; x++)
+    for (let y = by; y <= by + 2; y++)
+      for (let dz = 1; dz <= 2; dz++) w.setBlock(x, y, bz + dz, BLOCK.AIR, false);
+  w.remeshArea(bx - 2, bx + 3, bz - 1, bz + 3);
+}
+
+function teleport() {
+  const entryX = Math.floor(player.pos.x), entryZ = Math.floor(player.pos.z);
+  world.hide(); mobs.hide();
+
+  if (dimension === 'overworld') {
+    returnPos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
+    if (!netherWorld) {
+      netherWorld = new World(scene, (gameSeed ^ 0x9e3779b9) >>> 0, 'nether');
+      if (isTouch) netherWorld.renderDistance = 3;
+      netherMobs = new MobManager(netherWorld, scene);
+    }
+    dimension = 'nether';
+    world = netherWorld; mobs = netherMobs; player.world = world;
+    const dx = Math.round(entryX / 4), dz = Math.round(entryZ / 4);
+    world.preload(dx + 0.5, dz + 0.5);
+    const by = world.floorY(dx, dz, 40);
+    buildPortalStructure(world, dx, by, dz);
+    const sy = world.floorY(dx, dz + 1, 40);
+    player.pos.set(dx + 0.5, sy, dz + 1.5);   // stand in front of the portal
+  } else {
+    dimension = 'overworld';
+    world = overworld; mobs = overworldMobs; player.world = world;
+    if (returnPos) player.pos.set(returnPos.x, returnPos.y, returnPos.z);
+  }
+
+  player.vel.set(0, 0, 0);
+  world.show(); mobs.show();
+  setDimensionVisuals();
+  portalCooldown = 2.2; portalTimer = 0;
+  $('mode-indicator').textContent =
+    (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' +
+    (dimension === 'nether' ? 'nether' : selectedWorld);
+}
+
+// transient on-screen message
+let flashTimer = null;
+function flash(msg) {
+  const el = $('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  el.style.opacity = '1';
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.classList.add('hidden'), 350); }, 1600);
 }
 
 // ---------------- pause / quit ----------------
@@ -494,20 +653,42 @@ function loop(now) {
       regenTimer += dt;
       if (regenTimer > 4) { regenTimer = 0; health = Math.max(0, health - 1); updateStats(); if (health <= 0) respawn(); }
     }
+    // lava burns
+    const fb = world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y + 0.2), Math.floor(player.pos.z));
+    if (fb === BLOCK.LAVA) {
+      lavaTimer += dt;
+      if (lavaTimer > 0.5) { lavaTimer = 0; health = Math.max(0, health - 2); updateStats(); if (health <= 0) respawn(); }
+    } else lavaTimer = 0;
+  }
+
+  // nether portal: stand in a portal block briefly to travel
+  if (portalCooldown > 0) portalCooldown -= dt;
+  const inPortal =
+    world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y), Math.floor(player.pos.z)) === BLOCK.PORTAL ||
+    world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y + 1), Math.floor(player.pos.z)) === BLOCK.PORTAL;
+  if (inPortal && portalCooldown <= 0) {
+    portalTimer += dt;
+    if (portalTimer > 1.0) teleport();
+  } else if (!inPortal) {
+    portalTimer = 0;
   }
 
   world.update(player.pos.x, player.pos.z);
   mobs.update(dt);
 
-  // keep sun/fog centered (cheap day feel)
   renderer.render(scene, camera);
 }
 
 function respawn() {
-  let sx = 0.5, sz = 0.5;
-  if (selectedWorld === 'skyblock') { sx = 8.5; sz = 8.5; }
-  const sy = world.surfaceY(Math.floor(sx), Math.floor(sz));
-  player.pos.set(sx, sy + 1, sz);
+  if (dimension === 'nether') {
+    const sy = world.floorY(0, 0, 40);
+    player.pos.set(0.5, sy, 0.5);
+  } else {
+    let sx = 0.5, sz = 0.5;
+    if (selectedWorld === 'skyblock') { sx = 8.5; sz = 8.5; }
+    const sy = world.surfaceY(Math.floor(sx), Math.floor(sz));
+    player.pos.set(sx, sy + 1, sz);
+  }
   player.vel.set(0, 0, 0);
-  health = 20; hunger = 20; updateStats();
+  health = 20; hunger = 20; lavaTimer = 0; updateStats();
 }
