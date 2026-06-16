@@ -51,6 +51,7 @@ function wireMenu() {
   // settings open/close
   $('menu-settings-btn').addEventListener('click', () => openSettings('menu'));
   $('pause-settings-btn').addEventListener('click', () => openSettings('pause'));
+  $('hud-settings-btn').addEventListener('click', () => openSettings('game'));
   $('settings-close').addEventListener('click', closeSettings);
   // settings controls
   $('set-sens').addEventListener('input', (e) => { settings.sensitivity = +e.target.value; syncSettingsUI(); applySettings(); saveSettings(); });
@@ -92,7 +93,7 @@ let chestOpen = false, chestPosKey = null;
 // settings (persisted)
 const SETTINGS_KEY = 'skyforge_settings';
 const settings = { sensitivity: 1.0, btnScale: 1.0, leftHanded: false, invertY: false };
-let settingsReturn = 'menu';
+let settingsReturn = 'menu', settingsOpen = false;
 
 // mining (hold-to-break) state
 let miningActive = false, miningTarget = null, miningProgress = 0, miningNeeded = 1;
@@ -341,13 +342,8 @@ function setupInventory() {
     for (const id of PALETTE) inventory[id] = Infinity;
     for (const id of ALL_TOOLS) inventory[id] = Infinity;
     for (const id of CREATIVE_EXTRA) inventory[id] = Infinity;
-  } else {
-    // friendly starter kit so mining isn't a slog
-    inventory[BLOCK.WOOD] = 6;
-    inventory[ITEM.W_PICK] = 1;
-    inventory[ITEM.W_AXE] = 1;
-    inventory[ITEM.WHEAT_SEEDS] = 3;
   }
+  // survival starts with an empty inventory — punch a tree to begin
   refreshHotbar(true);
 }
 
@@ -376,9 +372,9 @@ function refreshHotbar(reset) {
     owned.sort((a, b) => (isTool(b) - isTool(a)) || (a - b));  // tools first
     hotbarItems = owned;
   }
-  if (hotbarItems.length === 0) hotbarItems = [BLOCK.DIRT];   // never empty
+  if (hotbarItems.length === 0) { hotbarItems = []; hotbarIndex = 0; buildHotbarDOM(); if (paused) { buildInventory(); refreshCrafting(); } return; }
   let idx = prev != null ? hotbarItems.indexOf(prev) : -1;
-  hotbarIndex = idx >= 0 ? idx : Math.min(hotbarIndex, hotbarItems.length - 1);
+  hotbarIndex = idx >= 0 ? idx : Math.max(0, Math.min(hotbarIndex, hotbarItems.length - 1));
   buildHotbarDOM();
   if (paused) { buildInventory(); refreshCrafting(); }
 }
@@ -592,8 +588,8 @@ function setupInput() {
   // ----- keyboard -----
   window.addEventListener('keydown', (e) => {
     keys[e.code] = true;
-    if (e.code === 'Escape') { if (furnaceOpen) closeFurnace(); else if (chestOpen) closeChest(); else togglePause(); }
-    if (e.code === 'KeyE') { if (furnaceOpen) closeFurnace(); else if (chestOpen) closeChest(); else togglePause(); }  // inventory
+    if (e.code === 'Escape') { if (settingsOpen) closeSettings(); else if (furnaceOpen) closeFurnace(); else if (chestOpen) closeChest(); else togglePause(); }
+    if (e.code === 'KeyE') { if (settingsOpen) closeSettings(); else if (furnaceOpen) closeFurnace(); else if (chestOpen) closeChest(); else togglePause(); }  // inventory
     if (e.code === 'KeyF') player && player.toggleFly();
     if (e.code === 'KeyG') ignitePortal();
     if (e.code.startsWith('Digit')) {
@@ -693,7 +689,7 @@ function setupTouch() {
   };
 
   window.addEventListener('touchstart', (e) => {
-    if (!running || paused || furnaceOpen || chestOpen) return;
+    if (!running || paused || furnaceOpen || chestOpen || settingsOpen) return;
     hideHint();
     for (const t of e.changedTouches) {
       if (isOnButton(t)) continue;                         // buttons/hotbar self-handle
@@ -709,7 +705,7 @@ function setupTouch() {
     }
   }, { passive: false });
   window.addEventListener('touchmove', (e) => {
-    if (!running || paused || furnaceOpen || chestOpen) return;
+    if (!running || paused || furnaceOpen || chestOpen || settingsOpen) return;
     for (const t of e.changedTouches) {
       if (t.identifier === moveId) { e.preventDefault(); updateJoy(t.clientX, t.clientY); }
       else if (t.identifier === lookId && player) {
@@ -1136,15 +1132,19 @@ function applySettings() {
 }
 function openSettings(from) {
   settingsReturn = from;
+  settingsOpen = true;
   if (from === 'menu') menuEl.classList.add('hidden');
-  else pauseEl.classList.add('hidden');
+  else if (from === 'pause') pauseEl.classList.add('hidden');
+  else { onBreakRelease(); if (document.pointerLockElement) document.exitPointerLock(); }  // in-game
   $('settings').classList.remove('hidden');
   syncSettingsUI();
 }
 function closeSettings() {
+  settingsOpen = false;
   $('settings').classList.add('hidden');
   if (settingsReturn === 'menu') menuEl.classList.remove('hidden');
-  else pauseEl.classList.remove('hidden');
+  else if (settingsReturn === 'pause') pauseEl.classList.remove('hidden');
+  else { lastTime = performance.now(); }   // resume the game
 }
 function syncSettingsUI() {
   $('set-sens').value = settings.sensitivity;
@@ -1213,7 +1213,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
-  if (paused || furnaceOpen || chestOpen) return;
+  if (paused || furnaceOpen || chestOpen || settingsOpen) return;
 
   if (!isTouch) readKeyboard();
 
