@@ -32,6 +32,7 @@ class World {
     this.noise = new Noise(seed);
     this.chunks = new Map();        // "cx,cz" -> { blocks: Uint8Array, mesh, tmesh, maxY }
     this.edits = new Map();         // "x,y,z" -> id, for blocks changed after generation
+    this.lootChests = [];           // structure chests awaiting loot registration
     this.renderDistance = 4;
 
     const atlas = buildAtlas();
@@ -177,6 +178,15 @@ class World {
           }
           this._set(ch, x, y, z, block);
         }
+        // carve caves out of the stone with 3D noise (winding tunnels +
+        // occasional caverns); deep carved cells become lava.
+        for (let y = 2; y < height - 3; y++) {
+          const b = ch.blocks[this._idx(x, y, z)];
+          if (b !== BLOCK.STONE && b !== BLOCK.GRAVEL) continue;   // keep ores as veins
+          const tunnel = Math.abs(this.noise.fbm3(wx, y * 1.4, wz, 3, 0.5, 0.055) - 0.5) < 0.05;
+          const cavern = this.noise.fbm3(wx + 500, y * 1.3, wz - 500, 3, 0.5, 0.04) > 0.84;
+          if (tunnel || cavern) this._set(ch, x, y, z, y <= 3 ? BLOCK.LAVA : BLOCK.AIR);
+        }
         // water fill
         for (let y = height + 1; y <= SEA_LEVEL; y++) this._set(ch, x, y, z, BLOCK.WATER);
 
@@ -187,6 +197,66 @@ class World {
         }
       }
     }
+
+    // structures (one decision per chunk, kept within bounds)
+    if (rnd() < 0.04) this._ruin(ch, cx, cz, 4 + (rnd() * 7 | 0), 4 + (rnd() * 7 | 0), rnd);
+    if (rnd() < 0.06) this._dungeon(ch, cx, cz, 4 + (rnd() * 7 | 0), 4 + (rnd() * 7 | 0), 8 + (rnd() * 18 | 0), rnd);
+  }
+
+  // top solid block height within this chunk at local (lx,lz)
+  _localSurface(ch, lx, lz) {
+    for (let y = HEIGHT - 1; y >= 0; y--) {
+      const b = ch.blocks[this._idx(lx, y, lz)];
+      if (b !== BLOCK.AIR && BLOCK_INFO[b] && BLOCK_INFO[b].solid) return y;
+    }
+    return -1;
+  }
+
+  // random loot for a structure chest
+  _loot(rnd) {
+    const items = {};
+    const pool = [
+      [BLOCK.COBBLE, 8], [ITEM.COAL, 4], [ITEM.IRON_INGOT, 3], [ITEM.BREAD, 2],
+      [ITEM.WHEAT_SEEDS, 3], [BLOCK.SAPLING, 1], [ITEM.GOLD_INGOT, 2], [ITEM.DIAMOND, 1],
+      [ITEM.I_PICK, 1], [BLOCK.TORCH, 4], [BLOCK.PLANK, 6],
+    ];
+    const count = 2 + (rnd() * 3 | 0);
+    for (let i = 0; i < count; i++) {
+      const [id, max] = pool[(rnd() * pool.length) | 0];
+      items[id] = (items[id] || 0) + (1 + (rnd() * max | 0));
+    }
+    return items;
+  }
+
+  // surface ruin: a small broken cobblestone shelter with a loot chest
+  _ruin(ch, cx, cz, lx, lz, rnd) {
+    const surf = this._localSurface(ch, lx, lz);
+    if (surf < SEA_LEVEL || surf > HEIGHT - 8) return;   // skip underwater / peaks
+    const base = surf + 1;
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++) {
+        this._set(ch, lx + dx, base - 1, lz + dz, BLOCK.COBBLE);   // floor
+        const edge = Math.abs(dx) === 2 || Math.abs(dz) === 2;
+        if (edge) for (let h = 0; h < 3; h++) {
+          if (rnd() < 0.7) this._set(ch, lx + dx, base + h, lz + dz, rnd() < 0.4 ? BLOCK.MOSSY_COBBLE : BLOCK.COBBLE);
+        }
+      }
+    this._set(ch, lx, base, lz, BLOCK.CHEST);
+    this.lootChests.push({ x: cx * CHUNK + lx, y: base, z: cz * CHUNK + lz, items: this._loot(rnd) });
+  }
+
+  // underground dungeon: a hollow mossy room with a loot chest
+  _dungeon(ch, cx, cz, lx, lz, ly, rnd) {
+    if (ly < 6 || ly > HEIGHT - 12) return;
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++)
+        for (let dy = -1; dy <= 3; dy++) {
+          const shell = Math.abs(dx) === 2 || Math.abs(dz) === 2 || dy === -1 || dy === 3;
+          if (shell) this._set(ch, lx + dx, ly + dy, lz + dz, rnd() < 0.45 ? BLOCK.MOSSY_COBBLE : BLOCK.COBBLE);
+          else this._set(ch, lx + dx, ly + dy, lz + dz, BLOCK.AIR);
+        }
+    this._set(ch, lx, ly, lz, BLOCK.CHEST);
+    this.lootChests.push({ x: cx * CHUNK + lx, y: ly, z: cz * CHUNK + lz, items: this._loot(rnd) });
   }
 
   _tree(ch, x, y, z, rnd = Math.random) {

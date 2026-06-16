@@ -243,6 +243,8 @@ function initWorld(seed, save) {
     setTimeout(hideHint, 6000);
   }
 
+  drainLootChests();   // register loot for structures in the spawn area
+
   running = true; paused = false;
   lastTime = performance.now(); saveTimer = 0;
   requestAnimationFrame(loop);
@@ -1250,6 +1252,16 @@ function dumpChest(x, y, z) {
   const store = chests[k];
   if (store) { for (const id in store) give(+id, store[id]); delete chests[k]; }
 }
+// register loot for newly generated structure chests (skip player-emptied/broken ones)
+function drainLootChests() {
+  if (!world.lootChests.length) return;
+  for (const lc of world.lootChests) {
+    if (world.getBlock(lc.x, lc.y, lc.z) !== BLOCK.CHEST) continue;
+    const k = chestKey(lc.x, lc.y, lc.z);
+    if (!chests[k]) chests[k] = lc.items;
+  }
+  world.lootChests.length = 0;
+}
 // starter chest placed on the skyblock island
 function addSkyblockChest() {
   const cx = 9, cz = 9, cy = world.surfaceY(cx, cz);
@@ -1359,6 +1371,7 @@ function loop(now) {
   }
 
   world.update(player.pos.x, player.pos.z);
+  drainLootChests();
   const contact = mobs.update(dt, player.pos);
   hurtCD -= dt;
   if (selectedMode === 'survival' && contact > 0 && hurtCD <= 0) {

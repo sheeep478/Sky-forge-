@@ -65,4 +65,41 @@ class Noise {
     }
     return total / max;
   }
+
+  // 3D hashing + value noise (for caves / 3D features)
+  _hash3(x, y, z) {
+    let h = this.seed;
+    h = Math.imul(h ^ (x | 0), 374761393);
+    h = Math.imul(h ^ (y | 0), 668265263);
+    h = Math.imul(h ^ (z | 0), 2246822519);
+    h = (h ^ (h >>> 13)) >>> 0;
+    h = Math.imul(h, 3266489917);
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h / 4294967296;
+  }
+
+  value3(x, y, z) {
+    const x0 = Math.floor(x), y0 = Math.floor(y), z0 = Math.floor(z);
+    const fx = this._smooth(x - x0), fy = this._smooth(y - y0), fz = this._smooth(z - z0);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const c000 = this._hash3(x0, y0, z0), c100 = this._hash3(x0 + 1, y0, z0);
+    const c010 = this._hash3(x0, y0 + 1, z0), c110 = this._hash3(x0 + 1, y0 + 1, z0);
+    const c001 = this._hash3(x0, y0, z0 + 1), c101 = this._hash3(x0 + 1, y0, z0 + 1);
+    const c011 = this._hash3(x0, y0 + 1, z0 + 1), c111 = this._hash3(x0 + 1, y0 + 1, z0 + 1);
+    const x00 = lerp(c000, c100, fx), x10 = lerp(c010, c110, fx);
+    const x01 = lerp(c001, c101, fx), x11 = lerp(c011, c111, fx);
+    const y0v = lerp(x00, x10, fy), y1v = lerp(x01, x11, fy);
+    return lerp(y0v, y1v, fz);
+  }
+
+  fbm3(x, y, z, octaves = 3, persistence = 0.5, scale = 0.05) {
+    let total = 0, amplitude = 1, frequency = scale, max = 0;
+    for (let i = 0; i < octaves; i++) {
+      total += this.value3(x * frequency, y * frequency, z * frequency) * amplitude;
+      max += amplitude;
+      amplitude *= persistence;
+      frequency *= 2;
+    }
+    return total / max;
+  }
 }
