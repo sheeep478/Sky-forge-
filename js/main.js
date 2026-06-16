@@ -174,6 +174,7 @@ function initWorld(seed, save) {
   timeOfDay = save ? save.timeOfDay : 0.25; spawnTimer = 0; hurtCD = 0;
   crops = save && save.crops ? save.crops : [];
   saplings = save && save.saplings ? save.saplings : [];
+  spawnPoint = save && save.spawnPoint ? save.spawnPoint : null;
   cropTimer = 0; saplingTimer = 0;
   buildItemIcons();
   setupInventory();
@@ -334,7 +335,7 @@ const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD, ITEM.W_
                    ITEM.I_PICK, ITEM.I_AXE, ITEM.I_SHOVEL, ITEM.I_SWORD, ITEM.I_HOE,
                    ITEM.D_PICK, ITEM.D_AXE, ITEM.D_SHOVEL, ITEM.D_SWORD];
 // extra non-block items shown in creative
-const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, BLOCK.SAPLING, ITEM.BREAD,
+const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, BLOCK.SAPLING, BLOCK.TALL_GRASS, ITEM.BREAD,
   ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
   ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
 let furnaceOpen = false;
@@ -343,6 +344,7 @@ let furnaceOpen = false;
 const equippedArmor = { helmet: 0, chest: 0, legs: 0, boots: 0 };
 let crops = [], cropTimer = 0;
 let saplings = [], saplingTimer = 0;
+let spawnPoint = null;   // bed respawn point {x,y,z} in the overworld
 
 function iconStyle(id) {
   const icon = itemIcon(id);
@@ -828,12 +830,12 @@ function doBreakSurvival(hit) {
   const tool = activeTool();
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
   if (hit.block === BLOCK.SAPLING) { removeSapling(hit.x, hit.y, hit.z); give(BLOCK.SAPLING, 1); return; }
+  if (hit.block === BLOCK.TALL_GRASS) { if (Math.random() < 0.5) give(ITEM.WHEAT_SEEDS, 1); return; }
   if (BLOCK_INFO[hit.block].crop) { harvestCrop(hit.block, hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
   const drop = blockDrop(hit.block, tool);
   if (drop) give(drop.id, drop.n);
-  // grass occasionally yields wheat seeds; leaves occasionally yield a sapling
-  if (hit.block === BLOCK.GRASS && Math.random() < 0.2) give(ITEM.WHEAT_SEEDS, 1);
+  // leaves occasionally yield a sapling
   if (hit.block === BLOCK.LEAVES && Math.random() < 0.1) give(BLOCK.SAPLING, 1);
 }
 
@@ -844,16 +846,19 @@ function placeBlock() {
   if (isFood(item)) { eatFood(item); return; }   // food needs no target
   const hit = raycast();
   if (!hit) return;
-  // interact with stations
+  // interact with stations / bed
   if (hit.block === BLOCK.FURNACE) { openFurnace(); return; }
   if (hit.block === BLOCK.CHEST) { openChest(hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CRAFTING_TABLE) { togglePause(); return; }
-  // hoe: till grass/dirt into farmland
+  if (hit.block === BLOCK.BED) { sleep(hit.x, hit.y, hit.z); return; }
+  // hoe: till grass/dirt into farmland (wet if near water)
   const tool = TOOLS[item];
   if (tool && tool.type === 'hoe') {
     if ((hit.block === BLOCK.GRASS || hit.block === BLOCK.DIRT) &&
         world.getBlock(hit.x, hit.y + 1, hit.z) === BLOCK.AIR) {
-      world.setBlock(hit.x, hit.y, hit.z, BLOCK.FARMLAND); flash('Tilled soil');
+      const wet = nearWater(hit.x, hit.y, hit.z);
+      world.setBlock(hit.x, hit.y, hit.z, wet ? BLOCK.FARMLAND_WET : BLOCK.FARMLAND);
+      flash(wet ? 'Tilled wet soil' : 'Tilled soil');
     }
     return;
   }
@@ -868,9 +873,10 @@ function placeBlock() {
     }
     return;
   }
-  // seeds: plant on farmland
+  // seeds: plant on farmland (dry or wet)
   if (item === ITEM.WHEAT_SEEDS) {
-    if (hit.block === BLOCK.FARMLAND && world.getBlock(hit.x, hit.y + 1, hit.z) === BLOCK.AIR) {
+    if ((hit.block === BLOCK.FARMLAND || hit.block === BLOCK.FARMLAND_WET) &&
+        world.getBlock(hit.x, hit.y + 1, hit.z) === BLOCK.AIR) {
       world.setBlock(hit.x, hit.y + 1, hit.z, BLOCK.WHEAT0);
       crops.push({ x: hit.x, y: hit.y + 1, z: hit.z, stage: 0 });
       if (selectedMode === 'survival') take(ITEM.WHEAT_SEEDS, 1);
@@ -908,6 +914,25 @@ function eatFood(item) {
   if (f.heal) health = Math.min(20, health + f.heal);
   take(item, 1); updateStats(); flash('Ate ' + itemName(item));
 }
+function nearWater(x, y, z) {
+  for (let dx = -4; dx <= 4; dx++)
+    for (let dz = -4; dz <= 4; dz++)
+      for (let dy = 0; dy <= 1; dy++)
+        if (world.getBlock(x + dx, y + dy, z + dz) === BLOCK.WATER) return true;
+  return false;
+}
+function sleep(bx, by, bz) {
+  if (dimension !== 'overworld') { flash('You can only sleep in the overworld'); return; }
+  spawnPoint = { x: bx, y: by, z: bz };
+  if (isNight()) {
+    timeOfDay = 0.0;                 // skip to morning
+    if (mobs) mobs.clearHostiles();
+    if (selectedMode === 'survival' && health < 20) { health = Math.min(20, health + 4); updateStats(); }
+    flash('Good morning! Spawn point set');
+  } else {
+    flash('Spawn point set');
+  }
+}
 function removeSapling(x, y, z) { saplings = saplings.filter((s) => !(s.x === x && s.y === y && s.z === z)); }
 function growSaplings(dt) {
   if (saplings.length === 0) return;
@@ -931,7 +956,8 @@ function growCrops(dt) {
   cropTimer = 0;
   for (const c of crops) {
     if (c.stage >= 2) continue;
-    if (Math.random() < 0.3) {
+    const wet = world.getBlock(c.x, c.y - 1, c.z) === BLOCK.FARMLAND_WET;
+    if (Math.random() < (wet ? 0.5 : 0.28)) {
       const cur = world.getBlock(c.x, c.y, c.z);
       if (cur < BLOCK.WHEAT0 || cur > BLOCK.WHEAT2) continue;   // got removed
       c.stage++;
@@ -1114,7 +1140,7 @@ function saveGame() {
       inv: selectedMode === 'survival' ? { ...inventory } : null,
       armor: { ...equippedArmor },
       activeItem: hotbarItems[hotbarIndex],
-      crops, saplings, chests, returnPos,
+      crops, saplings, chests, returnPos, spawnPoint,
       overworldEdits: overworld ? overworld.serializeEdits() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
     };
@@ -1387,7 +1413,9 @@ function loop(now) {
 }
 
 function respawn() {
-  if (dimension === 'nether') {
+  if (spawnPoint && dimension === 'overworld') {
+    player.pos.set(spawnPoint.x + 0.5, spawnPoint.y + 1, spawnPoint.z + 0.5);
+  } else if (dimension === 'nether') {
     const sy = world.floorY(0, 0, 40);
     player.pos.set(0.5, sy, 0.5);
   } else {

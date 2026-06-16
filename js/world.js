@@ -154,9 +154,18 @@ class World {
     for (let x = 0; x < CHUNK; x++) {
       for (let z = 0; z < CHUNK; z++) {
         const wx = cx * CHUNK + x, wz = cz * CHUNK + z;
-        const e = this.noise.fbm(wx, wz, 4, 0.5, 0.012);     // 0..1
-        const hilliness = this.noise.fbm(wx + 1000, wz - 1000, 2, 0.5, 0.005);
-        const height = Math.floor(SEA_LEVEL - 6 + e * 26 + hilliness * 8);
+        // Cross sea level near the noise's mean (~0.357) so lakes & oceans are
+        // common everywhere; a low-frequency hill term adds mountains.
+        const raw = this.noise.fbm(wx, wz, 4, 0.5, 0.03);
+        const hill = this.noise.fbm(wx + 1000, wz - 1000, 2, 0.5, 0.013);
+        let height = Math.floor(SEA_LEVEL + (raw - 0.38) * 66 + (hill - 0.35) * 12);
+        // lowland ponds/lakes (high-frequency noise self-averages, so these
+        // appear reliably on every seed; mountains are left untouched).
+        const pond = this.noise.fbm(wx + 7000, wz + 7000, 3, 0.5, 0.075);
+        if (pond > 0.66 && height >= SEA_LEVEL - 2 && height <= SEA_LEVEL + 8) {
+          height = SEA_LEVEL - 1 - Math.min(3, Math.floor((pond - 0.66) * 22));
+        }
+        if (height < 1) height = 1;
 
         for (let y = 0; y <= height; y++) {
           let block = BLOCK.STONE;
@@ -190,10 +199,12 @@ class World {
         // water fill
         for (let y = height + 1; y <= SEA_LEVEL; y++) this._set(ch, x, y, z, BLOCK.WATER);
 
-        // trees on grass, kept away from edges so canopy stays in-chunk
-        if (height >= SEA_LEVEL + 1 && height <= SEA_LEVEL + 17 &&
-            x >= 2 && x <= 13 && z >= 2 && z <= 13 && rnd() < 0.02) {
+        // foliage / trees on grassy land
+        const isGrassTop = height >= SEA_LEVEL + 1 && height <= SEA_LEVEL + 17;
+        if (isGrassTop && x >= 2 && x <= 13 && z >= 2 && z <= 13 && rnd() < 0.02) {
           this._tree(ch, x, height + 1, z, rnd);
+        } else if (isGrassTop && rnd() < 0.18) {
+          this._set(ch, x, height + 1, z, BLOCK.TALL_GRASS);   // seeds source
         }
       }
     }
