@@ -19,6 +19,8 @@ const ITEM = {
   // armor
   L_HELM: 160, L_CHEST: 161, L_LEGS: 162, L_BOOTS: 163,
   I_HELM: 170, I_CHEST: 171, I_LEGS: 172, I_BOOTS: 173,
+  // buckets + sheep
+  BUCKET: 180, WATER_BUCKET: 181, LAVA_BUCKET: 182, MUTTON: 183,
 };
 
 // Tool stats: matching a block's preferred tool multiplies mining speed.
@@ -49,6 +51,7 @@ const FOOD = {
   [ITEM.BREAD]:    { hunger: 5, heal: 0 },
   [ITEM.PORKCHOP]: { hunger: 3, heal: 1 },
   [ITEM.CHICKEN]:  { hunger: 2, heal: 1 },
+  [ITEM.MUTTON]:   { hunger: 3, heal: 1 },
 };
 function isFood(id) { return !!FOOD[id]; }
 
@@ -91,6 +94,8 @@ const ITEM_INFO = {
   [ITEM.L_LEGS]: { name: 'Leather Pants' }, [ITEM.L_BOOTS]: { name: 'Leather Boots' },
   [ITEM.I_HELM]: { name: 'Iron Helmet' }, [ITEM.I_CHEST]: { name: 'Iron Chestplate' },
   [ITEM.I_LEGS]: { name: 'Iron Leggings' }, [ITEM.I_BOOTS]: { name: 'Iron Boots' },
+  [ITEM.BUCKET]: { name: 'Bucket' }, [ITEM.WATER_BUCKET]: { name: 'Water Bucket' },
+  [ITEM.LAVA_BUCKET]: { name: 'Lava Bucket' }, [ITEM.MUTTON]: { name: 'Mutton' },
 };
 
 function isBlockItem(id) { return id < 100; }
@@ -128,7 +133,8 @@ const RECIPES = [
   { out: BLOCK.CRAFTING_TABLE, n: 1, rows: ['PP', 'PP'], key: { P: BLOCK.PLANK } },
   { out: BLOCK.CHEST, n: 1, rows: ['PPP', 'P.P', 'PPP'], key: { P: BLOCK.PLANK } },
   { out: BLOCK.FURNACE, n: 1, rows: ['CCC', 'C.C', 'CCC'], key: { C: BLOCK.COBBLE } },
-  { out: BLOCK.BED, n: 1, rows: ['LLL', 'PPP'], key: { L: BLOCK.LEAVES, P: BLOCK.PLANK } },
+  { out: BLOCK.BED, n: 1, rows: ['WWW', 'PPP'], key: { W: BLOCK.WOOL, P: BLOCK.PLANK } },
+  { out: ITEM.BUCKET, n: 1, rows: ['I.I', '.I.'], key: { I: ITEM.IRON_INGOT } },
   { out: BLOCK.STONE_BRICK, n: 4, rows: ['TT', 'TT'], key: { T: BLOCK.STONE } },
   { out: ITEM.BREAD, n: 1, rows: ['WWW'], key: { W: ITEM.WHEAT } },
   tool(ITEM.W_PICK, BLOCK.PLANK, 'pick'), tool(ITEM.W_AXE, BLOCK.PLANK, 'axe'),
@@ -155,6 +161,12 @@ function recipeIn(r) {
   return r._in;
 }
 function canCraft(inv, r) { return recipeIn(r).every(([id, n]) => (inv[id] || 0) >= n); }
+// does the recipe fit in a `cols`x`cols` grid? (2x2 inventory vs 3x3 table)
+function recipeFits(r, cols) {
+  if (r.shapeless) return r.shapeless.length <= cols * cols;
+  const s = recipeShape(r);
+  return s.w <= cols && s.h <= cols;
+}
 
 // ---- 3x3 grid matching (one item per cell) ----
 function _trim(cells) {
@@ -309,6 +321,16 @@ function buildItemIcons() {
   _itemIcons[ITEM.I_CHEST] = _armorIcon(armorCols.I, 'chest');
   _itemIcons[ITEM.I_LEGS] = _armorIcon(armorCols.I, 'legs');
   _itemIcons[ITEM.I_BOOTS] = _armorIcon(armorCols.I, 'boots');
+
+  const bucket = (fill) => _icon((x) => {
+    x.fillStyle = '#b8c0c8'; x.beginPath(); x.moveTo(8, 12); x.lineTo(24, 12); x.lineTo(21, 27); x.lineTo(11, 27); x.closePath(); x.fill();
+    x.fillStyle = '#8a949c'; x.fillRect(8, 11, 16, 2);
+    if (fill) { x.fillStyle = fill; x.fillRect(11, 14, 10, 5); }
+  });
+  _itemIcons[ITEM.BUCKET] = bucket(null);
+  _itemIcons[ITEM.WATER_BUCKET] = bucket('#2b6fd6');
+  _itemIcons[ITEM.LAVA_BUCKET] = bucket('#e2731a');
+  _itemIcons[ITEM.MUTTON] = _icon((x) => { x.fillStyle = '#d98793'; x.fillRect(8, 11, 16, 11); x.fillStyle = '#fff'; x.fillRect(19, 13, 4, 4); });
 }
 function itemIcon(id) {
   if (isBlockItem(id)) return blockIcon(id);

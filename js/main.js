@@ -102,7 +102,7 @@ let miningActive = false, miningTarget = null, miningProgress = 0, miningNeeded 
 // day/night + combat
 let timeOfDay = 0.25;        // 0..1, starts at morning
 let ambient = null;
-let spawnTimer = 0, hurtCD = 0;
+let spawnTimer = 0, hurtCD = 0, fluidTimer = 0;
 const DAY_LENGTH = 480;      // seconds for a full day–night cycle
 const NIGHT_MIN = 0.12;      // darkest sky-light multiplier
 
@@ -130,7 +130,7 @@ function startGame() {
 
 function ensureNether() {
   if (netherWorld) return;
-  netherWorld = new World(scene, (gameSeed ^ 0x9e3779b9) >>> 0, 'nether');
+  netherWorld = new World(scene, (gameSeed ^ 0x9e3779b9) >>> 0, 'nether', overworld ? overworld.genVersion : undefined);
   if (isTouch) netherWorld.renderDistance = 3;
   netherMobs = new MobManager(netherWorld, scene);
   if (pendingNetherEdits) { netherWorld.loadEdits(pendingNetherEdits); pendingNetherEdits = null; }
@@ -156,7 +156,7 @@ function initWorld(seed, save) {
   gameSeed = save ? (save.seed >>> 0) : (seed >>> 0);
   addLights();
 
-  world = new World(scene, gameSeed, selectedWorld);
+  world = new World(scene, gameSeed, selectedWorld, save ? save.genVersion : undefined);
   overworld = world;
   if (isTouch) world.renderDistance = 3;   // lighter for mobile
   if (save) overworld.loadEdits(save.overworldEdits);
@@ -338,6 +338,7 @@ const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD, ITEM.W_
                    ITEM.D_PICK, ITEM.D_AXE, ITEM.D_SHOVEL, ITEM.D_SWORD];
 // extra non-block items shown in creative
 const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, BLOCK.SAPLING, BLOCK.TALL_GRASS, ITEM.BREAD,
+  ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET,
   ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
   ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
 let furnaceOpen = false;
@@ -501,23 +502,38 @@ function buildArmorSlots() {
   if (pts) pts.textContent = armorPoints() ? '🛡️ ' + armorPoints() : '';
 }
 
-// ---- crafting grid (Minecraft-style 3x3, tap to place) ----
-const craftGrid = new Array(9).fill(0);
+// ---- crafting grid: 2x2 in the inventory, 3x3 at a crafting table ----
+const craftGrid = new Array(9).fill(0);   // stored as 3x3 (top-left used for 2x2)
 let heldCraftItem = 0;
+let craftCols = 2;
 
 function buildCraftGrid() {
   const g = $('craft-grid');
   if (!g) return;
   g.innerHTML = '';
-  for (let i = 0; i < 9; i++) {
-    const id = craftGrid[i];
-    const cell = document.createElement('div');
-    cell.className = 'craft-cell' + (id ? ' filled' : '');
-    if (id) cell.innerHTML = `<div class="swatch" style="${iconStyle(id)}"></div>`;
-    cell.addEventListener('click', () => onCraftCell(i));
-    g.appendChild(cell);
-  }
+  g.style.gridTemplateColumns = `repeat(${craftCols}, 46px)`;
+  g.style.gridTemplateRows = `repeat(${craftCols}, 46px)`;
+  for (let r = 0; r < craftCols; r++)
+    for (let c = 0; c < craftCols; c++) {
+      const idx = r * 3 + c;                 // map display cell -> 3x3 storage
+      const id = craftGrid[idx];
+      const cell = document.createElement('div');
+      cell.className = 'craft-cell' + (id ? ' filled' : '');
+      if (id) cell.innerHTML = `<div class="swatch" style="${iconStyle(id)}"></div>`;
+      cell.addEventListener('click', () => onCraftCell(idx));
+      g.appendChild(cell);
+    }
   updateCraftResult();
+}
+function openCraftingTable() {
+  if (!running || paused || furnaceOpen || chestOpen || settingsOpen) return;
+  craftCols = 3;
+  paused = true;
+  pauseEl.classList.remove('hidden');
+  onBreakRelease();
+  buildInventory(); buildCrafting();
+  saveGame();
+  if (document.pointerLockElement) document.exitPointerLock();
 }
 function onCraftCell(i) {
   if (craftGrid[i]) { give(craftGrid[i], 1); craftGrid[i] = 0; }   // take it back
@@ -574,13 +590,17 @@ function buildCrafting() {
 function refreshCrafting() {
   document.querySelectorAll('#crafting-list .recipe').forEach((row) => {
     const r = RECIPES[+row.dataset.ri];
-    const ok = canCraft(inventory, r);
+    const fits = recipeFits(r, craftCols);
+    const ok = fits && canCraft(inventory, r);
     row.classList.toggle('disabled', !ok);
-    row.querySelector('.craft-btn').disabled = !ok;
+    const btn = row.querySelector('.craft-btn');
+    btn.disabled = !ok;
+    btn.textContent = fits ? 'Fill' : 'Table';   // hint: needs a crafting table
   });
 }
 // auto-place a recipe's pattern into the grid from inventory, then it's ready to craft
 function autoFill(r) {
+  if (!recipeFits(r, craftCols)) { flash('Needs a crafting table'); return; }
   if (!canCraft(inventory, r)) { flash('Not enough materials'); return; }
   returnCraftGrid();
   if (r.shapeless) {
@@ -832,7 +852,7 @@ function isOnButton(t) {
 }
 
 // ---------------- voxel raycast (Amanatides & Woo) ----------------
-function raycast(maxDist = 6) {
+function raycast(maxDist = 6, includeLiquid = false) {
   const origin = player.getEyePos();
   const dir = player.getDirection();
   let x = Math.floor(origin.x), y = Math.floor(origin.y), z = Math.floor(origin.z);
@@ -850,7 +870,7 @@ function raycast(maxDist = 6) {
   while (t <= maxDist) {
     const b = world.getBlock(x, y, z);
     const bi = BLOCK_INFO[b];
-    if (b !== BLOCK.AIR && bi && (bi.solid || bi.crop)) {
+    if (b !== BLOCK.AIR && bi && (bi.solid || bi.crop || (includeLiquid && bi.liquid))) {
       return { x, y, z, nx, ny, nz, block: b };
     }
     if (tMaxX < tMaxY && tMaxX < tMaxZ) {
@@ -906,12 +926,34 @@ function placeBlock() {
   if (!running || paused || furnaceOpen || chestOpen || settingsOpen) return;
   const item = activeItem();
   if (isFood(item)) { eatFood(item); return; }   // food needs no target
+  // empty bucket: scoop the liquid you're aiming at
+  if (item === ITEM.BUCKET) {
+    const lh = raycast(6, true);
+    if (lh && BLOCK_INFO[lh.block].liquid) {
+      world.setBlock(lh.x, lh.y, lh.z, BLOCK.AIR);
+      take(ITEM.BUCKET, 1);
+      give(lh.block === BLOCK.WATER ? ITEM.WATER_BUCKET : ITEM.LAVA_BUCKET, 1);
+      flash('Filled bucket');
+    }
+    return;
+  }
+  // filled bucket: pour the liquid onto the targeted face
+  if (item === ITEM.WATER_BUCKET || item === ITEM.LAVA_BUCKET) {
+    const lh = raycast();
+    if (!lh) return;
+    const px = lh.x + lh.nx, py = lh.y + lh.ny, pz = lh.z + lh.nz;
+    if (world.getBlock(px, py, pz) === BLOCK.AIR && !overlapsPlayer(px, py, pz)) {
+      world.setBlock(px, py, pz, item === ITEM.WATER_BUCKET ? BLOCK.WATER : BLOCK.LAVA);
+      take(item, 1); give(ITEM.BUCKET, 1);
+    }
+    return;
+  }
   const hit = raycast();
   if (!hit) return;
   // interact with stations / bed
   if (hit.block === BLOCK.FURNACE) { openFurnace(); return; }
   if (hit.block === BLOCK.CHEST) { openChest(hit.x, hit.y, hit.z); return; }
-  if (hit.block === BLOCK.CRAFTING_TABLE) { togglePause(); return; }
+  if (hit.block === BLOCK.CRAFTING_TABLE) { openCraftingTable(); return; }
   if (hit.block === BLOCK.BED) { sleep(hit.x, hit.y, hit.z); return; }
   // hoe: till grass/dirt into farmland (wet if near water)
   const tool = TOOLS[item];
@@ -994,6 +1036,27 @@ function sleep(bx, by, bz) {
   } else {
     flash('Spawn point set');
   }
+}
+// cobblestone generator: an air cell touching both water and lava turns to
+// cobblestone. Build a lava + water with a 1-block gap to make a renewable one.
+const _NB6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+function fluidTick(dt) {
+  fluidTimer += dt;
+  if (fluidTimer < 0.8) return;
+  fluidTimer = 0;
+  const px = Math.floor(player.pos.x), py = Math.floor(player.pos.y), pz = Math.floor(player.pos.z);
+  const R = 6;
+  for (let x = px - R; x <= px + R; x++)
+    for (let y = py - R; y <= py + R; y++)
+      for (let z = pz - R; z <= pz + R; z++) {
+        if (world.getBlock(x, y, z) !== BLOCK.AIR) continue;
+        let w = false, l = false;
+        for (const n of _NB6) {
+          const b = world.getBlock(x + n[0], y + n[1], z + n[2]);
+          if (b === BLOCK.WATER) w = true; else if (b === BLOCK.LAVA) l = true;
+        }
+        if (w && l) world.setBlock(x, y, z, BLOCK.COBBLE);
+      }
 }
 function removeSapling(x, y, z) { saplings = saplings.filter((s) => !(s.x === x && s.y === y && s.z === z)); }
 function growSaplings(dt) {
@@ -1163,6 +1226,7 @@ function togglePause() {
   paused = !paused;
   pauseEl.classList.toggle('hidden', !paused);
   if (paused) {
+    craftCols = 2;                    // inventory only has a 2x2 grid
     onBreakRelease();                 // stop mining while in the menu
     buildInventory(); buildCrafting();
     saveGame();
@@ -1196,6 +1260,7 @@ function saveGame() {
     const data = {
       v: 2, id: currentWorldId, name: currentWorldName,
       seed: gameSeed, type: selectedWorld, mode: selectedMode,
+      genVersion: overworld ? overworld.genVersion : 1,
       dimension, timeOfDay,
       player: {
         x: player.pos.x, y: player.pos.y, z: player.pos.z,
@@ -1441,10 +1506,11 @@ function loop(now) {
     portalTimer = 0;
   }
 
-  // day/night + lighting + crops
+  // day/night + lighting + crops + fluids
   updateDayNight(dt);
   growCrops(dt);
   growSaplings(dt);
+  fluidTick(dt);
 
   // hostile mobs spawn at night in the overworld; burn off at dawn
   if (dimension === 'overworld') {

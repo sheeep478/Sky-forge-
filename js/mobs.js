@@ -56,8 +56,21 @@ function buildChicken() {
   return { group: g, legs, head };
 }
 
-const BUILDERS = { pig: buildPig, cow: buildCow, chicken: buildChicken };
-const NAMES = ['pig', 'cow', 'chicken'];
+function buildSheep() {
+  const g = new THREE.Group();
+  const wool = mat(0xe8e8e8), skin = mat(0xd8b9a6), leg = mat(0x6b5746);
+  g.add(box(0.85, 0.7, 1.05, wool, 0, 0.75, 0));           // fluffy body
+  const head = box(0.42, 0.42, 0.4, skin, 0, 0.7, -0.7); g.add(head);
+  g.add(box(0.46, 0.5, 0.2, wool, 0, 0.85, -0.55));        // wool on forehead
+  const legs = [];
+  for (const [x, z] of [[-0.28,-0.35],[0.28,-0.35],[-0.28,0.4],[0.28,0.4]]) {
+    const l = box(0.2, 0.4, 0.2, leg, x, 0.2, z); g.add(l); legs.push(l);
+  }
+  return { group: g, legs, head };
+}
+
+const BUILDERS = { pig: buildPig, cow: buildCow, chicken: buildChicken, sheep: buildSheep };
+const NAMES = ['pig', 'cow', 'chicken', 'sheep'];
 
 class Mob {
   constructor(type, world, scene) {
@@ -80,6 +93,7 @@ class Mob {
     this.kbx = 0; this.kbz = 0;   // knockback velocity
     this.drop = type === 'cow' ? { id: ITEM.LEATHER, n: 1 }
       : type === 'pig' ? { id: ITEM.PORKCHOP, n: 1 }
+      : type === 'sheep' ? { id: BLOCK.WOOL, n: 1 }
       : { id: ITEM.CHICKEN, n: 1 };
   }
 

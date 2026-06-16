@@ -8,6 +8,12 @@ const CHUNK = 16;          // chunk width/depth in blocks
 const HEIGHT = 64;         // world height in blocks
 const SEA_LEVEL = 24;
 
+// Terrain generation version. Saved worlds remember the version they were
+// created with and always regenerate using it, so changing generation never
+// shifts the terrain under existing builds. BUMP this when generation changes,
+// and branch on `this.genVersion` instead of editing an existing version path.
+const GEN_VERSION = 1;
+
 // Six face directions, each tagged with a face code (py/ny/px/nx/pz/nz).
 const DIRS = [
   { n: [0, 1, 0], face: 'py', bright: 1.0,
@@ -25,10 +31,11 @@ const DIRS = [
 ];
 
 class World {
-  constructor(scene, seed, type) {
+  constructor(scene, seed, type, genVersion) {
     this.scene = scene;
     this.seed = seed;
     this.type = type;
+    this.genVersion = genVersion || GEN_VERSION;
     this.noise = new Noise(seed);
     this.chunks = new Map();        // "cx,cz" -> { blocks: Uint8Array, mesh, tmesh, maxY }
     this.edits = new Map();         // "x,y,z" -> id, for blocks changed after generation
@@ -243,6 +250,14 @@ class World {
   _ruin(ch, cx, cz, lx, lz, rnd) {
     const surf = this._localSurface(ch, lx, lz);
     if (surf < SEA_LEVEL || surf > HEIGHT - 8) return;   // skip underwater / peaks
+    // require the whole footprint to be flat-ish land (no shoreline floats)
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++) {
+        const s = this._localSurface(ch, lx + dx, lz + dz);
+        if (s < SEA_LEVEL || Math.abs(s - surf) > 1) return;
+        const top = ch.blocks[this._idx(lx + dx, s, lz + dz)];
+        if (top === BLOCK.WATER || top === BLOCK.SAND) return;   // not on water/beach
+      }
     const base = surf + 1;
     for (let dx = -2; dx <= 2; dx++)
       for (let dz = -2; dz <= 2; dz++) {
@@ -259,6 +274,9 @@ class World {
   // underground dungeon: a hollow mossy room with a loot chest
   _dungeon(ch, cx, cz, lx, lz, ly, rnd) {
     if (ly < 6 || ly > HEIGHT - 12) return;
+    // must be safely underground (room top below the surface) so it can't float
+    const surf = this._localSurface(ch, lx, lz);
+    if (surf < 0 || ly + 4 > surf) return;
     for (let dx = -2; dx <= 2; dx++)
       for (let dz = -2; dz <= 2; dz++)
         for (let dy = -1; dy <= 3; dy++) {
