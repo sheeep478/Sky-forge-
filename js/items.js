@@ -99,51 +99,107 @@ function itemName(id) {
 }
 function isTool(id) { return !!TOOLS[id]; }
 
-// Crafting recipes — presented as a "recipe book" list.
+// Shaped/shapeless crafting recipes (Minecraft-style 3x3 grid).
+// rows+key define a shape ('.'=empty); shapeless lists ingredients in any layout.
+function tool(out, mat, shape) {        // shape: 'pick'|'axe'|'shovel'|'sword'|'hoe'
+  const rows = {
+    pick:   ['MMM', '.S.', '.S.'],
+    axe:    ['MM.', 'MS.', '.S.'],
+    shovel: ['M', 'S', 'S'],
+    sword:  ['M', 'M', 'S'],
+    hoe:    ['MM.', '.S.', '.S.'],
+  }[shape];
+  return { out, n: 1, rows, key: { M: mat, S: ITEM.STICK } };
+}
+function armor(out, mat, piece) {        // piece: 'helmet'|'chest'|'legs'|'boots'
+  const rows = {
+    helmet: ['MMM', 'M.M'],
+    chest:  ['M.M', 'MMM', 'MMM'],
+    legs:   ['MMM', 'M.M', 'M.M'],
+    boots:  ['M.M', 'M.M'],
+  }[piece];
+  return { out, n: 1, rows, key: { M: mat } };
+}
+
 const RECIPES = [
-  { out: BLOCK.PLANK, n: 4, in: [[BLOCK.WOOD, 1]] },
-  { out: ITEM.STICK, n: 4, in: [[BLOCK.PLANK, 2]] },
-  { out: BLOCK.TORCH, n: 4, in: [[ITEM.COAL, 1], [ITEM.STICK, 1]] },
-  { out: BLOCK.CRAFTING_TABLE, n: 1, in: [[BLOCK.PLANK, 4]] },
-  { out: BLOCK.CHEST, n: 1, in: [[BLOCK.PLANK, 8]] },
-  { out: BLOCK.BED, n: 1, in: [[BLOCK.PLANK, 3], [BLOCK.LEAVES, 3]] },
-  { out: BLOCK.STONE_BRICK, n: 4, in: [[BLOCK.STONE, 4]] },
-  { out: BLOCK.FURNACE, n: 1, in: [[BLOCK.COBBLE, 8]] },
-  { out: ITEM.W_PICK, n: 1, in: [[BLOCK.PLANK, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.W_AXE, n: 1, in: [[BLOCK.PLANK, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.W_SHOVEL, n: 1, in: [[BLOCK.PLANK, 1], [ITEM.STICK, 2]] },
-  { out: ITEM.W_SWORD, n: 1, in: [[BLOCK.PLANK, 2], [ITEM.STICK, 1]] },
-  { out: ITEM.S_PICK, n: 1, in: [[BLOCK.COBBLE, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.S_AXE, n: 1, in: [[BLOCK.COBBLE, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.S_SHOVEL, n: 1, in: [[BLOCK.COBBLE, 1], [ITEM.STICK, 2]] },
-  { out: ITEM.S_SWORD, n: 1, in: [[BLOCK.COBBLE, 2], [ITEM.STICK, 1]] },
-  { out: ITEM.I_PICK, n: 1, in: [[ITEM.IRON_INGOT, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.I_AXE, n: 1, in: [[ITEM.IRON_INGOT, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.I_SHOVEL, n: 1, in: [[ITEM.IRON_INGOT, 1], [ITEM.STICK, 2]] },
-  { out: ITEM.I_SWORD, n: 1, in: [[ITEM.IRON_INGOT, 2], [ITEM.STICK, 1]] },
-  { out: ITEM.D_PICK, n: 1, in: [[ITEM.DIAMOND, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.D_AXE, n: 1, in: [[ITEM.DIAMOND, 3], [ITEM.STICK, 2]] },
-  { out: ITEM.D_SHOVEL, n: 1, in: [[ITEM.DIAMOND, 1], [ITEM.STICK, 2]] },
-  { out: ITEM.D_SWORD, n: 1, in: [[ITEM.DIAMOND, 2], [ITEM.STICK, 1]] },
-  // hoes (farming)
-  { out: ITEM.W_HOE, n: 1, in: [[BLOCK.PLANK, 2], [ITEM.STICK, 2]] },
-  { out: ITEM.S_HOE, n: 1, in: [[BLOCK.COBBLE, 2], [ITEM.STICK, 2]] },
-  { out: ITEM.I_HOE, n: 1, in: [[ITEM.IRON_INGOT, 2], [ITEM.STICK, 2]] },
-  // food
-  { out: ITEM.BREAD, n: 1, in: [[ITEM.WHEAT, 3]] },
-  // leather armor
-  { out: ITEM.L_HELM, n: 1, in: [[ITEM.LEATHER, 5]] },
-  { out: ITEM.L_CHEST, n: 1, in: [[ITEM.LEATHER, 8]] },
-  { out: ITEM.L_LEGS, n: 1, in: [[ITEM.LEATHER, 7]] },
-  { out: ITEM.L_BOOTS, n: 1, in: [[ITEM.LEATHER, 4]] },
-  // iron armor
-  { out: ITEM.I_HELM, n: 1, in: [[ITEM.IRON_INGOT, 5]] },
-  { out: ITEM.I_CHEST, n: 1, in: [[ITEM.IRON_INGOT, 8]] },
-  { out: ITEM.I_LEGS, n: 1, in: [[ITEM.IRON_INGOT, 7]] },
-  { out: ITEM.I_BOOTS, n: 1, in: [[ITEM.IRON_INGOT, 4]] },
+  { out: BLOCK.PLANK, n: 4, shapeless: [BLOCK.WOOD] },
+  { out: ITEM.STICK, n: 4, rows: ['P', 'P'], key: { P: BLOCK.PLANK } },
+  { out: BLOCK.TORCH, n: 4, rows: ['O', 'S'], key: { O: ITEM.COAL, S: ITEM.STICK } },
+  { out: BLOCK.CRAFTING_TABLE, n: 1, rows: ['PP', 'PP'], key: { P: BLOCK.PLANK } },
+  { out: BLOCK.CHEST, n: 1, rows: ['PPP', 'P.P', 'PPP'], key: { P: BLOCK.PLANK } },
+  { out: BLOCK.FURNACE, n: 1, rows: ['CCC', 'C.C', 'CCC'], key: { C: BLOCK.COBBLE } },
+  { out: BLOCK.BED, n: 1, rows: ['LLL', 'PPP'], key: { L: BLOCK.LEAVES, P: BLOCK.PLANK } },
+  { out: BLOCK.STONE_BRICK, n: 4, rows: ['TT', 'TT'], key: { T: BLOCK.STONE } },
+  { out: ITEM.BREAD, n: 1, rows: ['WWW'], key: { W: ITEM.WHEAT } },
+  tool(ITEM.W_PICK, BLOCK.PLANK, 'pick'), tool(ITEM.W_AXE, BLOCK.PLANK, 'axe'),
+  tool(ITEM.W_SHOVEL, BLOCK.PLANK, 'shovel'), tool(ITEM.W_SWORD, BLOCK.PLANK, 'sword'), tool(ITEM.W_HOE, BLOCK.PLANK, 'hoe'),
+  tool(ITEM.S_PICK, BLOCK.COBBLE, 'pick'), tool(ITEM.S_AXE, BLOCK.COBBLE, 'axe'),
+  tool(ITEM.S_SHOVEL, BLOCK.COBBLE, 'shovel'), tool(ITEM.S_SWORD, BLOCK.COBBLE, 'sword'), tool(ITEM.S_HOE, BLOCK.COBBLE, 'hoe'),
+  tool(ITEM.I_PICK, ITEM.IRON_INGOT, 'pick'), tool(ITEM.I_AXE, ITEM.IRON_INGOT, 'axe'),
+  tool(ITEM.I_SHOVEL, ITEM.IRON_INGOT, 'shovel'), tool(ITEM.I_SWORD, ITEM.IRON_INGOT, 'sword'), tool(ITEM.I_HOE, ITEM.IRON_INGOT, 'hoe'),
+  tool(ITEM.D_PICK, ITEM.DIAMOND, 'pick'), tool(ITEM.D_AXE, ITEM.DIAMOND, 'axe'),
+  tool(ITEM.D_SHOVEL, ITEM.DIAMOND, 'shovel'), tool(ITEM.D_SWORD, ITEM.DIAMOND, 'sword'),
+  armor(ITEM.L_HELM, ITEM.LEATHER, 'helmet'), armor(ITEM.L_CHEST, ITEM.LEATHER, 'chest'),
+  armor(ITEM.L_LEGS, ITEM.LEATHER, 'legs'), armor(ITEM.L_BOOTS, ITEM.LEATHER, 'boots'),
+  armor(ITEM.I_HELM, ITEM.IRON_INGOT, 'helmet'), armor(ITEM.I_CHEST, ITEM.IRON_INGOT, 'chest'),
+  armor(ITEM.I_LEGS, ITEM.IRON_INGOT, 'legs'), armor(ITEM.I_BOOTS, ITEM.IRON_INGOT, 'boots'),
 ];
 
-function canCraft(inv, r) { return r.in.every(([id, n]) => (inv[id] || 0) >= n); }
+// ingredient totals (for the recipe list + auto-fill)
+function recipeIn(r) {
+  if (r._in) return r._in;
+  const tot = {};
+  if (r.shapeless) { for (const id of r.shapeless) tot[id] = (tot[id] || 0) + 1; }
+  else for (const row of r.rows) for (const ch of row) if (ch !== '.') { const id = r.key[ch]; tot[id] = (tot[id] || 0) + 1; }
+  r._in = Object.keys(tot).map((id) => [+id, tot[id]]);
+  return r._in;
+}
+function canCraft(inv, r) { return recipeIn(r).every(([id, n]) => (inv[id] || 0) >= n); }
+
+// ---- 3x3 grid matching (one item per cell) ----
+function _trim(cells) {
+  let minR = 3, maxR = -1, minC = 3, maxC = -1;
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (cells[r][c]) {
+    if (r < minR) minR = r; if (r > maxR) maxR = r; if (c < minC) minC = c; if (c > maxC) maxC = c;
+  }
+  if (maxR < 0) return { w: 0, h: 0, g: [] };
+  const g = [];
+  for (let r = minR; r <= maxR; r++) { const row = []; for (let c = minC; c <= maxC; c++) row.push(cells[r][c]); g.push(row); }
+  return { w: maxC - minC + 1, h: maxR - minR + 1, g };
+}
+function recipeShape(r) {
+  if (r._shape) return r._shape;
+  const cells = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let rr = 0; rr < r.rows.length; rr++) for (let cc = 0; cc < r.rows[rr].length; cc++) {
+    const ch = r.rows[rr][cc]; if (ch !== '.') cells[rr][cc] = r.key[ch];
+  }
+  r._shape = _trim(cells); return r._shape;
+}
+function gridShape(grid9) {
+  return _trim([[grid9[0], grid9[1], grid9[2]], [grid9[3], grid9[4], grid9[5]], [grid9[6], grid9[7], grid9[8]]]);
+}
+function craftResult(grid9) {
+  const have = {};
+  let count = 0;
+  for (const id of grid9) if (id) { have[id] = (have[id] || 0) + 1; count++; }
+  if (count === 0) return null;
+  const gs = gridShape(grid9);
+  for (const r of RECIPES) {
+    if (r.shapeless) {
+      const need = {}; for (const id of r.shapeless) need[id] = (need[id] || 0) + 1;
+      const nk = Object.keys(need);
+      if (nk.length === Object.keys(have).length && nk.every((k) => need[k] === have[k])) return { out: r.out, n: r.n };
+    } else {
+      const rs = recipeShape(r);
+      if (rs.w === gs.w && rs.h === gs.h) {
+        let eq = true;
+        for (let r2 = 0; r2 < rs.h && eq; r2++) for (let c2 = 0; c2 < rs.w; c2++) if (rs.g[r2][c2] !== gs.g[r2][c2]) { eq = false; break; }
+        if (eq) return { out: r.out, n: r.n };
+      }
+    }
+  }
+  return null;
+}
 
 // Smelting (furnace). Each smelt needs one input and one unit of fuel.
 const SMELTS = [

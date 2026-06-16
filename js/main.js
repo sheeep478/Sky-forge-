@@ -58,7 +58,8 @@ function wireMenu() {
   $('set-size').addEventListener('input', (e) => { settings.btnScale = +e.target.value; syncSettingsUI(); applySettings(); saveSettings(); });
   $('set-left').addEventListener('click', () => { settings.leftHanded = !settings.leftHanded; syncSettingsUI(); applySettings(); saveSettings(); });
   $('set-invy').addEventListener('click', () => { settings.invertY = !settings.invertY; syncSettingsUI(); saveSettings(); });
-  // chest close
+  // crafting result + chest close
+  $('craft-result').addEventListener('click', doCraft);
   $('chest-close').addEventListener('click', closeChest);
   // persistence lifecycle
   window.addEventListener('pagehide', () => { try { saveGame(); } catch (e) {} });
@@ -176,6 +177,7 @@ function initWorld(seed, save) {
   saplings = save && save.saplings ? save.saplings : [];
   spawnPoint = save && save.spawnPoint ? save.spawnPoint : null;
   cropTimer = 0; saplingTimer = 0;
+  craftGrid.fill(0); heldCraftItem = 0;
   buildItemIcons();
   setupInventory();
   buildCrafting();
@@ -438,12 +440,14 @@ function buildInventory() {
     it.className = 'inv-item';
     it.innerHTML = `<div class="swatch" style="${iconStyle(id)}"></div>` +
       `<span class="count">${count || ''}</span><span class="lbl">${itemName(id)}</span>`;
+    it.className = 'inv-item' + (id === heldCraftItem ? ' held' : '');
     it.addEventListener('click', () => {
       if (isArmor(id)) { equipArmor(id); }
-      else { selectHotbarItem(id); togglePause(); }
+      else { heldCraftItem = (heldCraftItem === id ? 0 : id); buildInventory(); }
     });
     grid.appendChild(it);
   });
+  updateCraftHeld();
 }
 function selectHotbarItem(id) {
   const i = hotbarItems.indexOf(id);
@@ -497,21 +501,72 @@ function buildArmorSlots() {
   if (pts) pts.textContent = armorPoints() ? '🛡️ ' + armorPoints() : '';
 }
 
+// ---- crafting grid (Minecraft-style 3x3, tap to place) ----
+const craftGrid = new Array(9).fill(0);
+let heldCraftItem = 0;
+
+function buildCraftGrid() {
+  const g = $('craft-grid');
+  if (!g) return;
+  g.innerHTML = '';
+  for (let i = 0; i < 9; i++) {
+    const id = craftGrid[i];
+    const cell = document.createElement('div');
+    cell.className = 'craft-cell' + (id ? ' filled' : '');
+    if (id) cell.innerHTML = `<div class="swatch" style="${iconStyle(id)}"></div>`;
+    cell.addEventListener('click', () => onCraftCell(i));
+    g.appendChild(cell);
+  }
+  updateCraftResult();
+}
+function onCraftCell(i) {
+  if (craftGrid[i]) { give(craftGrid[i], 1); craftGrid[i] = 0; }   // take it back
+  else if (heldCraftItem && (inventory[heldCraftItem] || 0) > 0) { take(heldCraftItem, 1); craftGrid[i] = heldCraftItem; }
+  buildCraftGrid(); buildInventory();
+}
+function updateCraftResult() {
+  const res = craftResult(craftGrid);
+  const slot = $('craft-result');
+  if (!slot) return;
+  slot.innerHTML = res
+    ? `<div class="swatch" style="${iconStyle(res.out)}"></div>` + (res.n > 1 ? `<span class="count">${res.n}</span>` : '')
+    : '';
+  slot.classList.toggle('ready', !!res);
+}
+function doCraft() {
+  const res = craftResult(craftGrid);
+  if (!res) return;
+  craftGrid.fill(0);              // ingredients consumed (one per cell)
+  give(res.out, res.n);
+  buildCraftGrid(); buildInventory();
+  flash('Crafted ' + itemName(res.out));
+}
+function returnCraftGrid() {       // give grid contents back (e.g. when closing)
+  let any = false;
+  for (let i = 0; i < 9; i++) if (craftGrid[i]) { give(craftGrid[i], 1); craftGrid[i] = 0; any = true; }
+  if (any) buildCraftGrid();
+}
+function updateCraftHeld() {
+  const el = $('craft-held');
+  if (el) el.textContent = heldCraftItem ? 'Holding: ' + itemName(heldCraftItem) + ' — tap a grid cell' : 'Tap an item below, then tap the grid';
+}
+
+// recipe reference list: tap to auto-fill the grid from your inventory
 function buildCrafting() {
+  buildCraftGrid();
   const list = $('crafting-list');
   list.innerHTML = '';
   RECIPES.forEach((r, ri) => {
-    const row = document.createElement('div');
-    row.className = 'recipe';
-    row.dataset.ri = ri;
-    const ing = r.in.map(([id, n]) =>
+    const ing = recipeIn(r).map(([id, n]) =>
       `<span class="ing"><span class="swatch sm" style="${iconStyle(id)}"></span>${n}</span>`).join('');
+    const row = document.createElement('div');
+    row.className = 'recipe'; row.dataset.ri = ri;
     row.innerHTML =
       `<div class="recipe-out"><span class="swatch" style="${iconStyle(r.out)}"></span>` +
       `<span class="recipe-name">${itemName(r.out)}${r.n > 1 ? ' ×' + r.n : ''}</span></div>` +
       `<div class="recipe-ings">${ing}</div>` +
-      `<button class="craft-btn">Craft</button>`;
-    row.querySelector('.craft-btn').addEventListener('click', () => craft(r));
+      `<button class="craft-btn">Fill</button>`;
+    row.querySelector('.craft-btn').addEventListener('click', () => autoFill(r));
     list.appendChild(row);
   });
   refreshCrafting();
@@ -524,14 +579,21 @@ function refreshCrafting() {
     row.querySelector('.craft-btn').disabled = !ok;
   });
 }
-function craft(r) {
-  if (!canCraft(inventory, r)) return;
-  for (const [id, n] of r.in) take(id, n);
-  give(r.out, r.n);
-  refreshHotbar();
-  buildInventory();
-  refreshCrafting();
-  flash('Crafted ' + itemName(r.out));
+// auto-place a recipe's pattern into the grid from inventory, then it's ready to craft
+function autoFill(r) {
+  if (!canCraft(inventory, r)) { flash('Not enough materials'); return; }
+  returnCraftGrid();
+  if (r.shapeless) {
+    let i = 0;
+    for (const id of r.shapeless) { take(id, 1); craftGrid[i++] = id; }
+  } else {
+    for (let rr = 0; rr < r.rows.length; rr++)
+      for (let cc = 0; cc < r.rows[rr].length; cc++) {
+        const ch = r.rows[rr][cc];
+        if (ch !== '.') { const id = r.key[ch]; take(id, 1); craftGrid[rr * 3 + cc] = id; }
+      }
+  }
+  buildCraftGrid(); buildInventory();
 }
 
 // ---- furnace / smelting ----
@@ -1102,14 +1164,16 @@ function togglePause() {
   pauseEl.classList.toggle('hidden', !paused);
   if (paused) {
     onBreakRelease();                 // stop mining while in the menu
-    buildInventory(); refreshCrafting();
+    buildInventory(); buildCrafting();
     saveGame();
     if (document.pointerLockElement) document.exitPointerLock();
   } else {
+    returnCraftGrid(); heldCraftItem = 0;
     lastTime = performance.now();
   }
 }
 function quitToMenu() {
+  returnCraftGrid(); heldCraftItem = 0;
   saveGame();
   running = false; paused = false; furnaceOpen = false; chestOpen = false;
   pauseEl.classList.add('hidden');
