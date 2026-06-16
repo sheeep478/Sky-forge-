@@ -28,7 +28,9 @@ Build, mine, and explore procedurally generated blocky worlds with passive anima
 - **Armor** — craft leather and iron helmets, chestplates, leggings and boots (leather drops from cows); equip them from the inventory screen to reduce incoming damage.
 - **Farming & food** — craft a hoe to till soil, plant **wheat seeds** (found in grass), let crops grow through three stages, then harvest wheat → **bread**. Animals drop food (porkchops, chicken). Eat to refill the hunger bar.
 - **Inventory & crafting screen** — open with **E** or the 🎒 button: see your items, equip armor, and craft.
-- **World saving** — your world autosaves to the browser (every ~15s, on pause, and when you leave). Pick **⟳ Continue last world** on the menu to resume — terrain, your builds, inventory, armor, crops, time of day and the Nether are all restored. Saves stay tiny by storing only the seed plus the blocks you changed.
+- **Multiple saved worlds** — each world is its own save slot. The menu lists **Your Worlds** (play or delete each); creating a world makes a new slot with a name you choose. Worlds autosave (every ~15s, on pause, and when you leave) and stay tiny by storing only the seed plus the blocks you changed — terrain, builds, inventory, armor, crops, chests, time of day and the Nether all restore.
+- **Chests / storage** — craft a chest (8 planks) and interact with it to open a storage screen; tap items to move them between you and the chest. Breaking a chest returns its contents.
+- **Settings** — a settings screen (⚙ on the menu or pause) for **look sensitivity**, on-screen **button size**, a **left-handed** toggle that swaps the move/look sides, and **invert vertical look**. Settings persist across sessions.
 - **3 passive mobs** — 🐷 Pig, 🐮 Cow, 🐔 Chicken — boxy models that wander, follow the terrain, and animate as they walk.
 - **Full mobile support** — on-screen joystick, look-to-drag, and jump / place / break buttons. Desktop gets mouse-look + keyboard.
 - **A proper main menu** to pick mode, world type and seed, plus an in-game pause/inventory screen.

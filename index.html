@@ -17,7 +17,10 @@
       <h1 class="logo">SKY<span>FORGE</span></h1>
       <p class="tagline">Build · Survive · Explore · Forge a Portal</p>
 
-      <button id="continue-btn" class="play-btn hidden">⟳ Continue last world</button>
+      <div id="worlds-section" class="menu-section hidden">
+        <label class="field-label">Your Worlds</label>
+        <div id="world-list"></div>
+      </div>
 
       <div class="menu-section">
         <label class="field-label">Game Mode</label>
@@ -37,11 +40,17 @@
       </div>
 
       <div class="menu-section">
+        <label class="field-label">World Name (optional)</label>
+        <input id="world-name" type="text" placeholder="My World" autocomplete="off" />
+      </div>
+
+      <div class="menu-section">
         <label class="field-label">World Seed (optional)</label>
         <input id="seed-input" type="text" placeholder="Leave blank for random" autocomplete="off" />
       </div>
 
-      <button id="play-btn" class="play-btn">▶ Create World</button>
+      <button id="play-btn" class="play-btn">▶ Create New World</button>
+      <button id="menu-settings-btn" class="play-btn ghost">⚙ Settings</button>
 
       <details class="help">
         <summary>How to play</summary>
@@ -125,7 +134,45 @@
       <h3 class="sub">Crafting</h3>
       <div id="crafting-list"></div>
       <button id="resume-btn" class="play-btn">Resume</button>
-      <button id="quit-btn" class="play-btn ghost">Quit to Menu</button>
+      <button id="pause-settings-btn" class="play-btn ghost">⚙ Settings</button>
+      <button id="quit-btn" class="play-btn ghost">Save &amp; Quit to Menu</button>
+    </div>
+  </div>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <div id="settings" class="screen hidden">
+    <div class="menu-panel">
+      <h2>⚙ Settings</h2>
+      <div class="menu-section">
+        <label class="field-label">Look sensitivity <span id="set-sens-val"></span></label>
+        <input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" />
+      </div>
+      <div class="menu-section">
+        <label class="field-label">Button size <span id="set-size-val"></span></label>
+        <input id="set-size" type="range" min="0.7" max="1.6" step="0.05" />
+      </div>
+      <div class="menu-section toggle-row">
+        <span class="field-label">Left-handed (swap move / buttons)</span>
+        <button id="set-left" class="toggle"></button>
+      </div>
+      <div class="menu-section toggle-row">
+        <span class="field-label">Invert vertical look</span>
+        <button id="set-invy" class="toggle"></button>
+      </div>
+      <p class="hint">On touch: left side moves, right side looks. Left-handed swaps them.</p>
+      <button id="settings-close" class="play-btn">Done</button>
+    </div>
+  </div>
+
+  <!-- ===================== CHEST / STORAGE ===================== -->
+  <div id="chest" class="screen hidden">
+    <div class="menu-panel">
+      <h2>📦 Chest</h2>
+      <h3 class="sub">In the chest <span class="sub-hint">(tap to take)</span></h3>
+      <div id="chest-grid" class="inv-like"></div>
+      <h3 class="sub">Your items <span class="sub-hint">(tap to store)</span></h3>
+      <div id="chest-inv" class="inv-like"></div>
+      <button id="chest-close" class="play-btn">Close</button>
     </div>
   </div>
 

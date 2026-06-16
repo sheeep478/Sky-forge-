@@ -7,6 +7,7 @@
   --text: #e8e8e8;
   --muted: #9aa0ad;
   --dirt: #7a5a3a;
+  --btn-scale: 1;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -162,6 +163,29 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 }
 .play-btn.ghost:active { box-shadow: 0 2px 0 #20232b; }
 
+/* saved worlds list */
+#world-list { display: flex; flex-direction: column; gap: 6px; max-height: 26vh; overflow-y: auto; }
+.world-row { display: flex; align-items: center; gap: 8px; background: var(--panel-light); border: 1px solid #3a3f4b; border-radius: 9px; padding: 8px 10px; }
+.world-info { display: flex; flex-direction: column; flex: 1; text-align: left; min-width: 0; }
+.world-name { font-weight: 700; font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.world-meta { font-size: 11px; color: var(--muted); }
+.world-play { background: var(--accent); color: #fff; border: none; padding: 7px 12px; border-radius: 7px; font-weight: 700; cursor: pointer; }
+.world-del { background: #4a3030; color: #e8a; border: none; padding: 7px 9px; border-radius: 7px; cursor: pointer; }
+
+/* settings controls */
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.toggle { width: 52px; height: 28px; border-radius: 16px; border: 2px solid #4a5060; background: var(--panel-light); position: relative; cursor: pointer; flex: 0 0 auto; }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #888; transition: all 0.15s; }
+.toggle.on { background: rgba(93,184,92,0.3); border-color: var(--accent); }
+.toggle.on::after { left: 26px; background: var(--accent); }
+
+/* chest screen */
+#chest { background: rgba(10,12,16,0.82); z-index: 61; }
+#chest .menu-panel { width: min(520px, 94vw); }
+.inv-like { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 8px; margin-bottom: 14px; max-height: 24vh; overflow-y: auto; }
+.inv-like .empty { grid-column: 1/-1; color: var(--muted); font-size: 13px; text-align: center; padding: 12px; }
+
 .hint { color: var(--muted); font-size: 12px; margin-top: 16px; min-height: 16px; }
 .credits { position: absolute; bottom: 14px; color: #5a6172; font-size: 12px; }
 
@@ -296,8 +320,8 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 /* Dynamic thumbstick: appears under the thumb on touch (left half of screen) */
 #joystick {
   position: absolute; left: 80px; top: 50%;
-  width: 130px; height: 130px;
-  margin-left: -65px; margin-top: -65px;
+  width: calc(130px * var(--btn-scale)); height: calc(130px * var(--btn-scale));
+  margin-left: calc(-65px * var(--btn-scale)); margin-top: calc(-65px * var(--btn-scale));
   background: rgba(255,255,255,0.10);
   border: 2px solid rgba(255,255,255,0.30);
   border-radius: 50%;
@@ -322,6 +346,11 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
   grid-template-rows: 70px 70px;
   gap: 10px;
   pointer-events: none;
+  transform: scale(var(--btn-scale));
+  transform-origin: bottom right;
+}
+#touch-controls.left-handed #action-buttons {
+  left: 20px; right: auto; transform-origin: bottom left;
 }
 .touch-btn {
   width: 70px; height: 70px;

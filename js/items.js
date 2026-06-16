@@ -105,6 +105,7 @@ const RECIPES = [
   { out: ITEM.STICK, n: 4, in: [[BLOCK.PLANK, 2]] },
   { out: BLOCK.TORCH, n: 4, in: [[ITEM.COAL, 1], [ITEM.STICK, 1]] },
   { out: BLOCK.CRAFTING_TABLE, n: 1, in: [[BLOCK.PLANK, 4]] },
+  { out: BLOCK.CHEST, n: 1, in: [[BLOCK.PLANK, 8]] },
   { out: BLOCK.STONE_BRICK, n: 4, in: [[BLOCK.STONE, 4]] },
   { out: BLOCK.FURNACE, n: 1, in: [[BLOCK.COBBLE, 8]] },
   { out: ITEM.W_PICK, n: 1, in: [[BLOCK.PLANK, 3], [ITEM.STICK, 2]] },

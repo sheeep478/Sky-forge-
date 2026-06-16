@@ -34,11 +34,35 @@ $('device-hint').textContent = isTouch
   : 'Desktop: click to lock mouse · WASD · Space jump · 1-9 blocks · G lights portal';
 
 $('play-btn').addEventListener('click', startGame);
-$('continue-btn').addEventListener('click', loadGame);
-// show "Continue" if a save exists, and persist on tab hide / close
-try { if (localStorage.getItem('skyforge_save_v1')) $('continue-btn').classList.remove('hidden'); } catch (e) {}
-window.addEventListener('pagehide', () => { try { saveGame(); } catch (e) {} });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { try { saveGame(); } catch (e) {} } });
+
+function migrateOldSave() {
+  try {
+    const old = localStorage.getItem('skyforge_save_v1');
+    if (old && readIndex().length === 0) {
+      const data = JSON.parse(old); const id = 'wlegacy'; data.id = id; data.name = 'World 1';
+      localStorage.setItem(worldKey(id), JSON.stringify(data));
+      writeIndex([{ id, name: 'World 1', mode: data.mode, type: data.type, updated: Date.now() }]);
+      localStorage.removeItem('skyforge_save_v1');
+    }
+  } catch (e) {}
+}
+
+function wireMenu() {
+  // settings open/close
+  $('menu-settings-btn').addEventListener('click', () => openSettings('menu'));
+  $('pause-settings-btn').addEventListener('click', () => openSettings('pause'));
+  $('settings-close').addEventListener('click', closeSettings);
+  // settings controls
+  $('set-sens').addEventListener('input', (e) => { settings.sensitivity = +e.target.value; syncSettingsUI(); applySettings(); saveSettings(); });
+  $('set-size').addEventListener('input', (e) => { settings.btnScale = +e.target.value; syncSettingsUI(); applySettings(); saveSettings(); });
+  $('set-left').addEventListener('click', () => { settings.leftHanded = !settings.leftHanded; syncSettingsUI(); applySettings(); saveSettings(); });
+  $('set-invy').addEventListener('click', () => { settings.invertY = !settings.invertY; syncSettingsUI(); saveSettings(); });
+  // chest close
+  $('chest-close').addEventListener('click', closeChest);
+  // persistence lifecycle
+  window.addEventListener('pagehide', () => { try { saveGame(); } catch (e) {} });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { try { saveGame(); } catch (e) {} } });
+}
 
 // ---------------- game state ----------------
 let renderer, scene, camera, world, player, mobs, sun;
@@ -55,7 +79,20 @@ let gameSeed = 0, dimension = 'overworld';
 let overworld = null, netherWorld = null, overworldMobs = null, netherMobs = null;
 let portalCooldown = 0, portalTimer = 0, returnPos = null, pendingNetherEdits = null;
 let saveTimer = 0;
-const SAVE_KEY = 'skyforge_save_v1';
+
+// multi-world saving
+const INDEX_KEY = 'skyforge_worlds';
+let currentWorldId = null, currentWorldName = '';
+function worldKey(id) { return 'skyforge_world_' + id; }
+
+// storage (chests): key "dim|x,y,z" -> { itemId: count }
+let chests = {};
+let chestOpen = false, chestPosKey = null;
+
+// settings (persisted)
+const SETTINGS_KEY = 'skyforge_settings';
+const settings = { sensitivity: 1.0, btnScale: 1.0, leftHanded: false, invertY: false };
+let settingsReturn = 'menu';
 
 // mining (hold-to-break) state
 let miningActive = false, miningTarget = null, miningProgress = 0, miningNeeded = 1;
@@ -73,6 +110,12 @@ function startGame() {
     document.getElementById('cdn-error').classList.remove('hidden');
     return;
   }
+  // start a brand-new world (its own save slot)
+  const nameStr = ($('world-name') ? $('world-name').value.trim() : '');
+  currentWorldName = nameStr || ('World ' + (readIndex().length + 1));
+  currentWorldId = 'w' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  chests = {};
+
   menuEl.classList.add('hidden');
   loadingEl.classList.remove('hidden');
 
@@ -126,6 +169,7 @@ function initWorld(seed, save) {
   health = 20; hunger = 20; lavaTimer = 0;
   miningActive = false; miningTarget = null; miningProgress = 0;
   furnaceOpen = false; $('furnace').classList.add('hidden');
+  chestOpen = false; $('chest').classList.add('hidden');
   timeOfDay = save ? save.timeOfDay : 0.25; spawnTimer = 0; hurtCD = 0;
   crops = save && save.crops ? save.crops : [];
   cropTimer = 0;
@@ -548,8 +592,8 @@ function setupInput() {
   // ----- keyboard -----
   window.addEventListener('keydown', (e) => {
     keys[e.code] = true;
-    if (e.code === 'Escape') { if (furnaceOpen) closeFurnace(); else togglePause(); }
-    if (e.code === 'KeyE') { if (furnaceOpen) closeFurnace(); else togglePause(); }  // inventory
+    if (e.code === 'Escape') { if (furnaceOpen) closeFurnace(); else if (chestOpen) closeChest(); else togglePause(); }
+    if (e.code === 'KeyE') { if (furnaceOpen) closeFurnace(); else if (chestOpen) closeChest(); else togglePause(); }  // inventory
     if (e.code === 'KeyF') player && player.toggleFly();
     if (e.code === 'KeyG') ignitePortal();
     if (e.code.startsWith('Digit')) {
@@ -573,7 +617,7 @@ function setupInput() {
   });
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === canvas && player && !paused) {
-      player.look(e.movementX, e.movementY);
+      player.look(e.movementX * settings.sensitivity, e.movementY * settings.sensitivity * (settings.invertY ? -1 : 1));
     }
   });
   // desktop break (hold) / place
@@ -621,7 +665,8 @@ function readKeyboard() {
 // drag to look. Action buttons handle themselves.
 function setupTouch() {
   const joy = $('joystick'), knob = $('joystick-knob');
-  const R = 55, DEAD = 0.2, LOOK_SENS = 0.9;
+  const DEAD = 0.2, LOOK_SENS = 0.9;
+  const Rad = () => 55 * settings.btnScale;   // joystick radius tracks button size
 
   let moveId = null, moveOX = 0, moveOY = 0;
   let lookId = null, lastLX = 0, lastLY = 0;
@@ -632,6 +677,7 @@ function setupTouch() {
     knob.style.transform = 'translate(0,0)';
   };
   const updateJoy = (x, y) => {
+    const R = Rad();
     let dx = x - moveOX, dy = y - moveOY;
     const d = Math.hypot(dx, dy);
     if (d > R) { dx = dx / d * R; dy = dy / d * R; }
@@ -647,11 +693,13 @@ function setupTouch() {
   };
 
   window.addEventListener('touchstart', (e) => {
-    if (!running || paused) return;
+    if (!running || paused || furnaceOpen || chestOpen) return;
     hideHint();
     for (const t of e.changedTouches) {
       if (isOnButton(t)) continue;                         // buttons/hotbar self-handle
-      if (moveId === null && t.clientX < window.innerWidth * 0.5) {
+      const half = window.innerWidth * 0.5;
+      const onMoveSide = settings.leftHanded ? (t.clientX > half) : (t.clientX < half);
+      if (moveId === null && onMoveSide) {
         moveId = t.identifier; moveOX = t.clientX; moveOY = t.clientY;
         showJoy(t.clientX, t.clientY); updateJoy(t.clientX, t.clientY);
         e.preventDefault();
@@ -661,12 +709,13 @@ function setupTouch() {
     }
   }, { passive: false });
   window.addEventListener('touchmove', (e) => {
-    if (!running || paused) return;
+    if (!running || paused || furnaceOpen || chestOpen) return;
     for (const t of e.changedTouches) {
       if (t.identifier === moveId) { e.preventDefault(); updateJoy(t.clientX, t.clientY); }
       else if (t.identifier === lookId && player) {
         e.preventDefault();
-        player.look((t.clientX - lastLX) * LOOK_SENS, (t.clientY - lastLY) * LOOK_SENS);
+        const s = LOOK_SENS * settings.sensitivity;
+        player.look((t.clientX - lastLX) * s, (t.clientY - lastLY) * s * (settings.invertY ? -1 : 1));
         lastLX = t.clientX; lastLY = t.clientY;
       }
     }
@@ -741,7 +790,7 @@ function raycast(maxDist = 6) {
 
 // ---- mining ----
 function onBreakPress() {
-  if (!running || paused || furnaceOpen) return;
+  if (!running || paused || furnaceOpen || chestOpen) return;
   // melee first if we're aiming at a mob
   const t = TOOLS[activeItem()];
   const dmg = (t && t.attack) || 1;
@@ -759,12 +808,14 @@ function mineInstant() {
   if (!hit || BLOCK_INFO[hit.block].unbreakable) return;
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
   if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
+  if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
 }
 function doBreakSurvival(hit) {
   if (BLOCK_INFO[hit.block].unbreakable) return;
   const tool = activeTool();
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
   if (BLOCK_INFO[hit.block].crop) { harvestCrop(hit.block, hit.x, hit.y, hit.z); return; }
+  if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
   const drop = blockDrop(hit.block, tool);
   if (drop) give(drop.id, drop.n);
   // grass occasionally yields wheat seeds
@@ -773,13 +824,14 @@ function doBreakSurvival(hit) {
 
 // place a block OR use the held item (eat / till / plant)
 function placeBlock() {
-  if (!running || paused || furnaceOpen) return;
+  if (!running || paused || furnaceOpen || chestOpen) return;
   const item = activeItem();
   if (isFood(item)) { eatFood(item); return; }   // food needs no target
   const hit = raycast();
   if (!hit) return;
   // interact with stations
   if (hit.block === BLOCK.FURNACE) { openFurnace(); return; }
+  if (hit.block === BLOCK.CHEST) { openChest(hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CRAFTING_TABLE) { togglePause(); return; }
   // hoe: till grass/dirt into farmland
   const tool = TOOLS[item];
@@ -977,6 +1029,7 @@ function flash(msg) {
 function togglePause() {
   if (!running) return;
   if (furnaceOpen) { closeFurnace(); return; }
+  if (chestOpen) { closeChest(); return; }
   paused = !paused;
   pauseEl.classList.toggle('hidden', !paused);
   if (paused) {
@@ -990,24 +1043,27 @@ function togglePause() {
 }
 function quitToMenu() {
   saveGame();
-  running = false; paused = false; furnaceOpen = false;
+  running = false; paused = false; furnaceOpen = false; chestOpen = false;
   pauseEl.classList.add('hidden');
   $('furnace').classList.add('hidden');
+  $('chest').classList.add('hidden');
   hudEl.classList.add('hidden');
   touchEl.classList.add('hidden');
   menuEl.classList.remove('hidden');
-  refreshContinueButton();
+  renderWorldList();
   if (document.pointerLockElement) document.exitPointerLock();
 }
 
-// ---------------- save / load (localStorage) ----------------
-function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
+// ---------------- multi-world save / load ----------------
+function readIndex() { try { return JSON.parse(localStorage.getItem(INDEX_KEY)) || []; } catch (e) { return []; } }
+function writeIndex(arr) { try { localStorage.setItem(INDEX_KEY, JSON.stringify(arr)); } catch (e) {} }
 
 function saveGame() {
-  if (!running || !player) return false;
+  if (!running || !player || !currentWorldId) return false;
   try {
     const data = {
-      v: 1, seed: gameSeed, type: selectedWorld, mode: selectedMode,
+      v: 2, id: currentWorldId, name: currentWorldName,
+      seed: gameSeed, type: selectedWorld, mode: selectedMode,
       dimension, timeOfDay,
       player: {
         x: player.pos.x, y: player.pos.y, z: player.pos.z,
@@ -1016,29 +1072,139 @@ function saveGame() {
       inv: selectedMode === 'survival' ? { ...inventory } : null,
       armor: { ...equippedArmor },
       activeItem: hotbarItems[hotbarIndex],
-      crops,
-      returnPos,
+      crops, chests, returnPos,
       overworldEdits: overworld ? overworld.serializeEdits() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    localStorage.setItem(worldKey(currentWorldId), JSON.stringify(data));
+    // upsert index entry
+    const idx = readIndex().filter((w) => w.id !== currentWorldId);
+    idx.unshift({ id: currentWorldId, name: currentWorldName, mode: selectedMode, type: selectedWorld, updated: Date.now() });
+    writeIndex(idx);
     return true;
   } catch (e) { return false; }
 }
 
-function loadGame() {
+function loadWorld(id) {
   let data;
-  try { data = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return; }
+  try { data = JSON.parse(localStorage.getItem(worldKey(id))); } catch (e) { return; }
   if (!data) return;
   if (typeof THREE === 'undefined' || !window.THREE) { $('cdn-error').classList.remove('hidden'); return; }
+  currentWorldId = id; currentWorldName = data.name || 'World';
+  chests = data.chests || {};
   menuEl.classList.add('hidden');
   loadingEl.classList.remove('hidden');
   setTimeout(() => initWorld(data.seed, data), 30);
 }
 
-function refreshContinueButton() {
-  const btn = $('continue-btn');
-  if (btn) btn.classList.toggle('hidden', !hasSave());
+function deleteWorld(id) {
+  try { localStorage.removeItem(worldKey(id)); } catch (e) {}
+  writeIndex(readIndex().filter((w) => w.id !== id));
+  renderWorldList();
+}
+
+function renderWorldList() {
+  const list = $('world-list');
+  if (!list) return;
+  const idx = readIndex().sort((a, b) => b.updated - a.updated);
+  $('worlds-section').classList.toggle('hidden', idx.length === 0);
+  list.innerHTML = '';
+  for (const w of idx) {
+    const row = document.createElement('div');
+    row.className = 'world-row';
+    const when = new Date(w.updated).toLocaleDateString();
+    row.innerHTML =
+      `<div class="world-info"><span class="world-name">${w.name || 'World'}</span>` +
+      `<span class="world-meta">${w.mode} · ${w.type} · ${when}</span></div>` +
+      `<button class="world-play">Play</button><button class="world-del" title="Delete">🗑</button>`;
+    row.querySelector('.world-play').addEventListener('click', () => loadWorld(w.id));
+    row.querySelector('.world-del').addEventListener('click', () => {
+      if (confirm('Delete "' + (w.name || 'World') + '"? This cannot be undone.')) deleteWorld(w.id);
+    });
+    list.appendChild(row);
+  }
+}
+
+// ---------------- settings ----------------
+function loadSettings() {
+  try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)); if (s) Object.assign(settings, s); } catch (e) {}
+}
+function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} }
+function applySettings() {
+  document.documentElement.style.setProperty('--btn-scale', settings.btnScale);
+  if (touchEl) touchEl.classList.toggle('left-handed', settings.leftHanded);
+}
+function openSettings(from) {
+  settingsReturn = from;
+  if (from === 'menu') menuEl.classList.add('hidden');
+  else pauseEl.classList.add('hidden');
+  $('settings').classList.remove('hidden');
+  syncSettingsUI();
+}
+function closeSettings() {
+  $('settings').classList.add('hidden');
+  if (settingsReturn === 'menu') menuEl.classList.remove('hidden');
+  else pauseEl.classList.remove('hidden');
+}
+function syncSettingsUI() {
+  $('set-sens').value = settings.sensitivity;
+  $('set-sens-val').textContent = settings.sensitivity.toFixed(2) + '×';
+  $('set-size').value = settings.btnScale;
+  $('set-size-val').textContent = Math.round(settings.btnScale * 100) + '%';
+  $('set-left').classList.toggle('on', settings.leftHanded);
+  $('set-invy').classList.toggle('on', settings.invertY);
+}
+
+// ---------------- chests / storage ----------------
+function chestKey(x, y, z) { return dimension + '|' + x + ',' + y + ',' + z; }
+function openChest(x, y, z) {
+  chestPosKey = chestKey(x, y, z);
+  if (!chests[chestPosKey]) chests[chestPosKey] = {};
+  chestOpen = true;
+  onBreakRelease();
+  buildChestGUI();
+  $('chest').classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeChest() {
+  chestOpen = false; chestPosKey = null;
+  $('chest').classList.add('hidden');
+  lastTime = performance.now();
+}
+function buildChestGUI() {
+  const store = chests[chestPosKey] || {};
+  const cg = $('chest-grid'), ig = $('chest-inv');
+  const fill = (grid, src, onClick, emptyMsg) => {
+    grid.innerHTML = '';
+    const ids = Object.keys(src).map(Number).filter((id) => (src[id] || 0) > 0);
+    if (!ids.length) { grid.innerHTML = `<p class="empty">${emptyMsg}</p>`; return; }
+    for (const id of ids) {
+      const c = src[id];
+      const it = document.createElement('div');
+      it.className = 'inv-item';
+      it.innerHTML = `<div class="swatch" style="${iconStyle(id)}"></div>` +
+        `<span class="count">${c === Infinity ? '' : c}</span><span class="lbl">${itemName(id)}</span>`;
+      it.addEventListener('click', () => onClick(id));
+      grid.appendChild(it);
+    }
+  };
+  // chest -> player
+  fill(cg, store, (id) => {
+    const n = store[id]; give(id, n === Infinity ? 1 : n); delete store[id]; buildChestGUI();
+  }, 'Empty chest');
+  // player -> chest (creative gives 1 at a time)
+  fill(ig, inventory, (id) => {
+    const have = inventory[id];
+    const n = have === Infinity ? 1 : have;
+    store[id] = (store[id] || 0) + n;
+    if (have !== Infinity) take(id, n);
+    buildChestGUI();
+  }, 'Your inventory is empty');
+}
+function dumpChest(x, y, z) {
+  const k = chestKey(x, y, z);
+  const store = chests[k];
+  if (store) { for (const id in store) give(+id, store[id]); delete chests[k]; }
 }
 
 // ---------------- main loop ----------------
@@ -1047,7 +1213,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
-  if (paused || furnaceOpen) return;
+  if (paused || furnaceOpen || chestOpen) return;
 
   if (!isTouch) readKeyboard();
 
@@ -1163,3 +1329,10 @@ function respawn() {
   health = 20; hunger = 20; lavaTimer = 0; updateStats();
   if (mobs) mobs.clearHostiles();
 }
+
+// ---------------- bootstrap (after all declarations are initialized) ----------------
+loadSettings();
+applySettings();
+migrateOldSave();
+wireMenu();
+renderWorldList();
