@@ -31,6 +31,7 @@ class World {
     this.type = type;
     this.noise = new Noise(seed);
     this.chunks = new Map();        // "cx,cz" -> { blocks: Uint8Array, mesh, tmesh, maxY }
+    this.edits = new Map();         // "x,y,z" -> id, for blocks changed after generation
     this.renderDistance = 4;
 
     const atlas = buildAtlas();
@@ -81,6 +82,7 @@ class World {
     const lx = wx - cx * CHUNK, lz = wz - cz * CHUNK;
     ch.blocks[this._idx(lx, wy, lz)] = id;
     if (id !== BLOCK.AIR && wy > ch.maxY) ch.maxY = wy;
+    this.edits.set(wx + ',' + wy + ',' + wz, id);   // remember post-gen changes
     if (rebuild) {
       this.buildMesh(cx, cz);
       // rebuild neighbors if on edge
@@ -443,6 +445,24 @@ class World {
       if (this.isSolid(wx, y, wz) && !this.isSolid(wx, y + 1, wz)) return y + 1;
     }
     return 2;
+  }
+
+  // ---- save / load (only post-generation edits are persisted) ----
+  serializeEdits() {
+    const out = [];
+    for (const [k, id] of this.edits) {
+      const p = k.split(',');
+      out.push(+p[0], +p[1], +p[2], id);   // flat [x,y,z,id, ...]
+    }
+    return out;
+  }
+  loadEdits(flat) {
+    if (!flat) return;
+    for (let i = 0; i + 3 < flat.length; i += 4) {
+      const x = flat[i], y = flat[i + 1], z = flat[i + 2], id = flat[i + 3];
+      this.ensureChunk(Math.floor(x / CHUNK), Math.floor(z / CHUNK));
+      this.setBlock(x, y, z, id, false);   // write data; meshes built on stream
+    }
   }
 
   // rebuild meshes covering a world-space box (plus a one-chunk margin).

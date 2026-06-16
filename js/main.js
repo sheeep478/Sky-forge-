@@ -34,6 +34,11 @@ $('device-hint').textContent = isTouch
   : 'Desktop: click to lock mouse · WASD · Space jump · 1-9 blocks · G lights portal';
 
 $('play-btn').addEventListener('click', startGame);
+$('continue-btn').addEventListener('click', loadGame);
+// show "Continue" if a save exists, and persist on tab hide / close
+try { if (localStorage.getItem('skyforge_save_v1')) $('continue-btn').classList.remove('hidden'); } catch (e) {}
+window.addEventListener('pagehide', () => { try { saveGame(); } catch (e) {} });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { try { saveGame(); } catch (e) {} } });
 
 // ---------------- game state ----------------
 let renderer, scene, camera, world, player, mobs, sun;
@@ -48,7 +53,9 @@ let health = 20, hunger = 20, hungerTimer = 0, regenTimer = 0, lavaTimer = 0;
 // dimensions (overworld <-> nether)
 let gameSeed = 0, dimension = 'overworld';
 let overworld = null, netherWorld = null, overworldMobs = null, netherMobs = null;
-let portalCooldown = 0, portalTimer = 0, returnPos = null;
+let portalCooldown = 0, portalTimer = 0, returnPos = null, pendingNetherEdits = null;
+let saveTimer = 0;
+const SAVE_KEY = 'skyforge_save_v1';
 
 // mining (hold-to-break) state
 let miningActive = false, miningTarget = null, miningProgress = 0, miningNeeded = 1;
@@ -76,7 +83,15 @@ function startGame() {
   setTimeout(() => initWorld(seed), 30);
 }
 
-function initWorld(seed) {
+function ensureNether() {
+  if (netherWorld) return;
+  netherWorld = new World(scene, (gameSeed ^ 0x9e3779b9) >>> 0, 'nether');
+  if (isTouch) netherWorld.renderDistance = 3;
+  netherMobs = new MobManager(netherWorld, scene);
+  if (pendingNetherEdits) { netherWorld.loadEdits(pendingNetherEdits); pendingNetherEdits = null; }
+}
+
+function initWorld(seed, save) {
   if (!renderer) setupRenderer();
 
   // reset scene contents (both dimensions)
@@ -85,48 +100,83 @@ function initWorld(seed) {
   if (overworldMobs) overworldMobs.clear();
   if (netherMobs) netherMobs.clear();
   netherWorld = null; netherMobs = null;
-  dimension = 'overworld'; portalCooldown = 0; portalTimer = 0; returnPos = null;
+  portalCooldown = 0; portalTimer = 0;
+
+  if (save) { selectedMode = save.mode; selectedWorld = save.type; }
+  dimension = 'overworld';
+  returnPos = save && save.returnPos ? save.returnPos : null;
+  pendingNetherEdits = save && save.netherEdits && save.netherEdits.length ? save.netherEdits : null;
 
   scene.clear();
-  gameSeed = seed >>> 0;
+  gameSeed = save ? (save.seed >>> 0) : (seed >>> 0);
   addLights();
 
-  world = new World(scene, seed, selectedWorld);
+  world = new World(scene, gameSeed, selectedWorld);
   overworld = world;
   if (isTouch) world.renderDistance = 3;   // lighter for mobile
+  if (save) overworld.loadEdits(save.overworldEdits);
 
   // spawn position
   let sx = 0.5, sz = 0.5;
   if (selectedWorld === 'skyblock') { sx = 8.5; sz = 8.5; }
-  world.preload(sx, sz);
-  const sy = world.surfaceY(Math.floor(sx), Math.floor(sz));
-
-  camera.position.set(sx, sy + 2, sz);
   player = new Player(camera, world);
-  player.pos.set(sx, sy + 1, sz);
   player.setMode(selectedMode === 'creative');
-
-  mobs = new MobManager(world, scene);
-  overworldMobs = mobs;
-  if (selectedWorld !== 'skyblock') mobs.spawnInitial(sx, sz, isTouch ? 5 : 8, 16);
-  else mobs.spawnInitial(sx, sz, 3, 3);   // keep animals on the tiny island
 
   // reset survival + inventory
   health = 20; hunger = 20; lavaTimer = 0;
   miningActive = false; miningTarget = null; miningProgress = 0;
   furnaceOpen = false; $('furnace').classList.add('hidden');
-  timeOfDay = 0.25; spawnTimer = 0; hurtCD = 0;
-  crops = []; cropTimer = 0;
+  timeOfDay = save ? save.timeOfDay : 0.25; spawnTimer = 0; hurtCD = 0;
+  crops = save && save.crops ? save.crops : [];
+  cropTimer = 0;
   buildItemIcons();
   setupInventory();
   buildCrafting();
+
+  if (save) {
+    // restore player + survival state
+    player.pos.set(save.player.x, save.player.y, save.player.z);
+    player.yaw = save.player.yaw; player.pitch = save.player.pitch;
+    health = save.player.health; hunger = save.player.hunger;
+    if (selectedMode === 'survival' && save.inv) {
+      for (const k in inventory) delete inventory[k];
+      for (const k in save.inv) inventory[+k] = save.inv[k];
+    }
+    Object.assign(equippedArmor, save.armor || {});
+    refreshHotbar(true);
+    if (save.activeItem != null) selectHotbarItem(save.activeItem);
+    // restore the dimension we saved in
+    if (save.dimension === 'nether') {
+      ensureNether();
+      world = netherWorld; mobs = netherMobs; dimension = 'nether'; player.world = world;
+      world.preload(player.pos.x, player.pos.z);
+    } else {
+      world.preload(player.pos.x, player.pos.z);
+    }
+  } else {
+    const sy = world.surfaceY(Math.floor(sx), Math.floor(sz));
+    player.pos.set(sx, sy + 1, sz);
+    world.preload(sx, sz);
+  }
+
+  if (dimension === 'nether') { mobs = netherMobs; }
+  else {
+    mobs = new MobManager(world, scene);
+    overworldMobs = mobs;
+    if (selectedWorld !== 'skyblock') mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 5 : 8, 16);
+    else mobs.spawnInitial(player.pos.x, player.pos.z, 3, 3);
+  }
+  if (!overworldMobs) { overworldMobs = new MobManager(overworld, scene); }
+
   updateStats();
 
   loadingEl.classList.add('hidden');
   hudEl.classList.remove('hidden');
   $('mode-indicator').textContent =
-    (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' + selectedWorld;
+    (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' +
+    (dimension === 'nether' ? 'nether' : selectedWorld);
   $('stats').style.display = selectedMode === 'survival' ? 'flex' : 'none';
+  setDimensionVisuals();
 
   if (isTouch) {
     touchEl.classList.remove('hidden');
@@ -136,8 +186,9 @@ function initWorld(seed) {
   }
 
   running = true; paused = false;
-  lastTime = performance.now();
+  lastTime = performance.now(); saveTimer = 0;
   requestAnimationFrame(loop);
+  saveGame();   // persist immediately so "Continue" reflects this world
 }
 
 // ---------------- three setup ----------------
@@ -886,11 +937,7 @@ function teleport() {
 
   if (dimension === 'overworld') {
     returnPos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
-    if (!netherWorld) {
-      netherWorld = new World(scene, (gameSeed ^ 0x9e3779b9) >>> 0, 'nether');
-      if (isTouch) netherWorld.renderDistance = 3;
-      netherMobs = new MobManager(netherWorld, scene);
-    }
+    ensureNether();
     dimension = 'nether';
     world = netherWorld; mobs = netherMobs; player.world = world;
     const dx = Math.round(entryX / 4), dz = Math.round(entryZ / 4);
@@ -935,19 +982,63 @@ function togglePause() {
   if (paused) {
     onBreakRelease();                 // stop mining while in the menu
     buildInventory(); refreshCrafting();
+    saveGame();
     if (document.pointerLockElement) document.exitPointerLock();
   } else {
     lastTime = performance.now();
   }
 }
 function quitToMenu() {
+  saveGame();
   running = false; paused = false; furnaceOpen = false;
   pauseEl.classList.add('hidden');
   $('furnace').classList.add('hidden');
   hudEl.classList.add('hidden');
   touchEl.classList.add('hidden');
   menuEl.classList.remove('hidden');
+  refreshContinueButton();
   if (document.pointerLockElement) document.exitPointerLock();
+}
+
+// ---------------- save / load (localStorage) ----------------
+function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
+
+function saveGame() {
+  if (!running || !player) return false;
+  try {
+    const data = {
+      v: 1, seed: gameSeed, type: selectedWorld, mode: selectedMode,
+      dimension, timeOfDay,
+      player: {
+        x: player.pos.x, y: player.pos.y, z: player.pos.z,
+        yaw: player.yaw, pitch: player.pitch, health, hunger,
+      },
+      inv: selectedMode === 'survival' ? { ...inventory } : null,
+      armor: { ...equippedArmor },
+      activeItem: hotbarItems[hotbarIndex],
+      crops,
+      returnPos,
+      overworldEdits: overworld ? overworld.serializeEdits() : [],
+      netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) { return false; }
+}
+
+function loadGame() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return; }
+  if (!data) return;
+  if (typeof THREE === 'undefined' || !window.THREE) { $('cdn-error').classList.remove('hidden'); return; }
+  menuEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+  setTimeout(() => initWorld(data.seed, data), 30);
+}
+
+function refreshContinueButton() {
+  const btn = $('continue-btn');
+  if (btn) btn.classList.toggle('hidden', !hasSave());
 }
 
 // ---------------- main loop ----------------
@@ -1050,6 +1141,10 @@ function loop(now) {
     health = Math.max(0, health - reduceDamage(contact)); updateStats(); hurtCD = 0.5;
     if (health <= 0) respawn();
   }
+
+  // autosave periodically
+  saveTimer += dt;
+  if (saveTimer > 15) { saveTimer = 0; saveGame(); }
 
   renderer.render(scene, camera);
 }
