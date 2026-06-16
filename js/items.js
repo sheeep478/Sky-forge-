@@ -9,10 +9,16 @@ const ITEM = {
   DIAMOND: 102,
   IRON_INGOT: 103,
   GOLD_INGOT: 104,
-  W_PICK: 110, W_AXE: 111, W_SHOVEL: 112, W_SWORD: 113,
-  S_PICK: 120, S_AXE: 121, S_SHOVEL: 122, S_SWORD: 123,
-  I_PICK: 130, I_AXE: 131, I_SHOVEL: 132, I_SWORD: 133,
+  LEATHER: 105,
+  W_PICK: 110, W_AXE: 111, W_SHOVEL: 112, W_SWORD: 113, W_HOE: 114,
+  S_PICK: 120, S_AXE: 121, S_SHOVEL: 122, S_SWORD: 123, S_HOE: 124,
+  I_PICK: 130, I_AXE: 131, I_SHOVEL: 132, I_SWORD: 133, I_HOE: 134,
   D_PICK: 140, D_AXE: 141, D_SHOVEL: 142, D_SWORD: 143,
+  // farming + food
+  WHEAT_SEEDS: 150, WHEAT: 151, BREAD: 152, PORKCHOP: 153, CHICKEN: 154,
+  // armor
+  L_HELM: 160, L_CHEST: 161, L_LEGS: 162, L_BOOTS: 163,
+  I_HELM: 170, I_CHEST: 171, I_LEGS: 172, I_BOOTS: 173,
 };
 
 // Tool stats: matching a block's preferred tool multiplies mining speed.
@@ -33,7 +39,27 @@ const TOOLS = {
   [ITEM.D_AXE]:    { type: 'axe',     tier: 'diamond', speed: 8, attack: 6 },
   [ITEM.D_SHOVEL]: { type: 'shovel',  tier: 'diamond', speed: 8, attack: 5 },
   [ITEM.D_SWORD]:  { type: 'sword',   tier: 'diamond', speed: 1, attack: 8 },
+  [ITEM.W_HOE]:    { type: 'hoe', tier: 'wood',  speed: 1, attack: 1 },
+  [ITEM.S_HOE]:    { type: 'hoe', tier: 'stone', speed: 1, attack: 1 },
+  [ITEM.I_HOE]:    { type: 'hoe', tier: 'iron',  speed: 1, attack: 1 },
 };
+
+// food: hunger restored + a little healing
+const FOOD = {
+  [ITEM.BREAD]:    { hunger: 5, heal: 0 },
+  [ITEM.PORKCHOP]: { hunger: 3, heal: 1 },
+  [ITEM.CHICKEN]:  { hunger: 2, heal: 1 },
+};
+function isFood(id) { return !!FOOD[id]; }
+
+// armor: which slot it fills + protection points
+const ARMOR = {
+  [ITEM.L_HELM]:  { slot: 'helmet', points: 1 }, [ITEM.L_CHEST]: { slot: 'chest', points: 3 },
+  [ITEM.L_LEGS]:  { slot: 'legs',   points: 2 }, [ITEM.L_BOOTS]: { slot: 'boots', points: 1 },
+  [ITEM.I_HELM]:  { slot: 'helmet', points: 2 }, [ITEM.I_CHEST]: { slot: 'chest', points: 6 },
+  [ITEM.I_LEGS]:  { slot: 'legs',   points: 5 }, [ITEM.I_BOOTS]: { slot: 'boots', points: 2 },
+};
+function isArmor(id) { return !!ARMOR[id]; }
 
 const ITEM_INFO = {
   [ITEM.STICK]:   { name: 'Stick' },
@@ -57,6 +83,14 @@ const ITEM_INFO = {
   [ITEM.D_AXE]:    { name: 'Diamond Axe' },
   [ITEM.D_SHOVEL]: { name: 'Diamond Shovel' },
   [ITEM.D_SWORD]:  { name: 'Diamond Sword' },
+  [ITEM.W_HOE]: { name: 'Wooden Hoe' }, [ITEM.S_HOE]: { name: 'Stone Hoe' }, [ITEM.I_HOE]: { name: 'Iron Hoe' },
+  [ITEM.LEATHER]: { name: 'Leather' },
+  [ITEM.WHEAT_SEEDS]: { name: 'Wheat Seeds' }, [ITEM.WHEAT]: { name: 'Wheat' },
+  [ITEM.BREAD]: { name: 'Bread' }, [ITEM.PORKCHOP]: { name: 'Porkchop' }, [ITEM.CHICKEN]: { name: 'Chicken' },
+  [ITEM.L_HELM]: { name: 'Leather Helmet' }, [ITEM.L_CHEST]: { name: 'Leather Tunic' },
+  [ITEM.L_LEGS]: { name: 'Leather Pants' }, [ITEM.L_BOOTS]: { name: 'Leather Boots' },
+  [ITEM.I_HELM]: { name: 'Iron Helmet' }, [ITEM.I_CHEST]: { name: 'Iron Chestplate' },
+  [ITEM.I_LEGS]: { name: 'Iron Leggings' }, [ITEM.I_BOOTS]: { name: 'Iron Boots' },
 };
 
 function isBlockItem(id) { return id < 100; }
@@ -89,6 +123,22 @@ const RECIPES = [
   { out: ITEM.D_AXE, n: 1, in: [[ITEM.DIAMOND, 3], [ITEM.STICK, 2]] },
   { out: ITEM.D_SHOVEL, n: 1, in: [[ITEM.DIAMOND, 1], [ITEM.STICK, 2]] },
   { out: ITEM.D_SWORD, n: 1, in: [[ITEM.DIAMOND, 2], [ITEM.STICK, 1]] },
+  // hoes (farming)
+  { out: ITEM.W_HOE, n: 1, in: [[BLOCK.PLANK, 2], [ITEM.STICK, 2]] },
+  { out: ITEM.S_HOE, n: 1, in: [[BLOCK.COBBLE, 2], [ITEM.STICK, 2]] },
+  { out: ITEM.I_HOE, n: 1, in: [[ITEM.IRON_INGOT, 2], [ITEM.STICK, 2]] },
+  // food
+  { out: ITEM.BREAD, n: 1, in: [[ITEM.WHEAT, 3]] },
+  // leather armor
+  { out: ITEM.L_HELM, n: 1, in: [[ITEM.LEATHER, 5]] },
+  { out: ITEM.L_CHEST, n: 1, in: [[ITEM.LEATHER, 8]] },
+  { out: ITEM.L_LEGS, n: 1, in: [[ITEM.LEATHER, 7]] },
+  { out: ITEM.L_BOOTS, n: 1, in: [[ITEM.LEATHER, 4]] },
+  // iron armor
+  { out: ITEM.I_HELM, n: 1, in: [[ITEM.IRON_INGOT, 5]] },
+  { out: ITEM.I_CHEST, n: 1, in: [[ITEM.IRON_INGOT, 8]] },
+  { out: ITEM.I_LEGS, n: 1, in: [[ITEM.IRON_INGOT, 7]] },
+  { out: ITEM.I_BOOTS, n: 1, in: [[ITEM.IRON_INGOT, 4]] },
 ];
 
 function canCraft(inv, r) { return r.in.every(([id, n]) => (inv[id] || 0) >= n); }
@@ -127,6 +177,7 @@ function blockDrop(blockId, toolItem) {
     case BLOCK.COAL_ORE: return { id: ITEM.COAL, n: 1 };
     case BLOCK.DIAMOND_ORE: return { id: ITEM.DIAMOND, n: 1 };
     case BLOCK.WOOD_X: case BLOCK.WOOD_Z: return { id: BLOCK.WOOD, n: 1 };
+    case BLOCK.FARMLAND: return { id: BLOCK.DIRT, n: 1 };
     case BLOCK.LEAVES: return null;
     case BLOCK.SNOW: return { id: BLOCK.SNOW, n: 1 };
     default: return { id: blockId, n: 1 };
@@ -151,6 +202,18 @@ function _tool(x, headColor, type) {
   else if (type === 'axe') { x.fillRect(14, 4, 11, 10); x.fillRect(11, 6, 4, 7); }
   else if (type === 'shovel') { x.fillRect(15, 4, 12, 11); }
   else if (type === 'sword') { x.fillStyle = headColor; x.fillRect(18, 3, 4, 18); x.fillStyle = '#7a5a32'; x.fillRect(15, 21, 10, 3); x.fillRect(19, 23, 2, 6); }
+  else if (type === 'hoe') { x.fillRect(13, 5, 12, 4); x.fillRect(21, 5, 4, 6); }
+}
+// armor icons by slot
+function _armorIcon(col, slot) {
+  return _icon((x) => {
+    x.fillStyle = col;
+    if (slot === 'helmet') { x.fillRect(8, 7, 16, 10); x.clearRect(11, 13, 10, 4); }
+    else if (slot === 'chest') { x.fillRect(7, 6, 18, 6); x.fillRect(9, 12, 14, 12); }
+    else if (slot === 'legs') { x.fillRect(8, 6, 16, 8); x.fillRect(9, 14, 6, 12); x.fillRect(17, 14, 6, 12); }
+    else if (slot === 'boots') { x.fillRect(8, 16, 7, 10); x.fillRect(17, 16, 7, 10); }
+    x.fillStyle = 'rgba(255,255,255,0.25)'; x.fillRect(9, 8, 3, 2);
+  });
 }
 function buildItemIcons() {
   if (Object.keys(_itemIcons).length) return;
@@ -168,6 +231,26 @@ function buildItemIcons() {
     [ITEM.D_PICK, 'diamond', 'pickaxe'], [ITEM.D_AXE, 'diamond', 'axe'], [ITEM.D_SHOVEL, 'diamond', 'shovel'], [ITEM.D_SWORD, 'diamond', 'sword'],
   ];
   for (const [id, tier, type] of toolList) _itemIcons[id] = _icon((x) => _tool(x, heads[tier], type));
+  _itemIcons[ITEM.W_HOE] = _icon((x) => _tool(x, heads.wood, 'hoe'));
+  _itemIcons[ITEM.S_HOE] = _icon((x) => _tool(x, heads.stone, 'hoe'));
+  _itemIcons[ITEM.I_HOE] = _icon((x) => _tool(x, heads.iron, 'hoe'));
+
+  _itemIcons[ITEM.LEATHER] = _icon((x) => { x.fillStyle = '#9a6a3a'; x.fillRect(7, 8, 18, 16); x.fillStyle = '#7a5028'; x.fillRect(10, 11, 4, 4); });
+  _itemIcons[ITEM.WHEAT_SEEDS] = _icon((x) => { x.fillStyle = '#7aa83d'; for (const [px, py] of [[10, 12], [16, 16], [20, 11], [13, 19]]) x.fillRect(px, py, 3, 3); });
+  _itemIcons[ITEM.WHEAT] = _icon((x) => { x.fillStyle = '#d8b23a'; x.fillRect(14, 6, 4, 20); x.fillStyle = '#e8d36a'; x.fillRect(10, 9, 12, 3); x.fillRect(11, 14, 10, 3); });
+  _itemIcons[ITEM.BREAD] = _icon((x) => { x.fillStyle = '#b07a3a'; x.fillRect(6, 11, 20, 10); x.fillStyle = '#8a5a26'; x.fillRect(9, 13, 2, 6); x.fillRect(14, 13, 2, 6); x.fillRect(19, 13, 2, 6); });
+  _itemIcons[ITEM.PORKCHOP] = _icon((x) => { x.fillStyle = '#e89aa6'; x.fillRect(8, 10, 16, 12); x.fillStyle = '#fff'; x.fillRect(20, 12, 4, 4); });
+  _itemIcons[ITEM.CHICKEN] = _icon((x) => { x.fillStyle = '#f0cfa0'; x.fillRect(9, 10, 14, 12); x.fillStyle = '#cf9a5a'; x.fillRect(12, 13, 3, 4); });
+
+  const armorCols = { L: '#9a6a3a', I: '#d4d4d4' };
+  _itemIcons[ITEM.L_HELM] = _armorIcon(armorCols.L, 'helmet');
+  _itemIcons[ITEM.L_CHEST] = _armorIcon(armorCols.L, 'chest');
+  _itemIcons[ITEM.L_LEGS] = _armorIcon(armorCols.L, 'legs');
+  _itemIcons[ITEM.L_BOOTS] = _armorIcon(armorCols.L, 'boots');
+  _itemIcons[ITEM.I_HELM] = _armorIcon(armorCols.I, 'helmet');
+  _itemIcons[ITEM.I_CHEST] = _armorIcon(armorCols.I, 'chest');
+  _itemIcons[ITEM.I_LEGS] = _armorIcon(armorCols.I, 'legs');
+  _itemIcons[ITEM.I_BOOTS] = _armorIcon(armorCols.I, 'boots');
 }
 function itemIcon(id) {
   if (isBlockItem(id)) return blockIcon(id);

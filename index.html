@@ -46,7 +46,8 @@
         <div class="help-body">
           <p><b>Move</b> with WASD or the left thumbstick · <b>look</b> with the mouse or by dragging.</p>
           <p><b>Mine</b> by holding break — harder blocks take longer; the right <b>tool</b> is faster. <b>Place</b> blocks to build.</p>
-          <p><b>Craft</b> from the pause menu (☰): logs → planks → sticks → tools. Stone needs a pickaxe to drop.</p>
+          <p><b>Inventory &amp; crafting:</b> press <b>E</b> (or tap 🎒). Equip armor by tapping it; craft logs → planks → sticks → tools.</p>
+          <p>🌾 <b>Farming:</b> craft a hoe, use it on grass/dirt to till, plant <b>wheat seeds</b> (from grass), wait for them to grow gold, then harvest → bread. Eat food (use it) to refill hunger.</p>
           <p><b>Night is dark and dangerous</b> — zombies spawn after dusk. Craft <b>torches</b> (coal + stick) for light, and a <b>sword</b> to fight back. Attack with the break action.</p>
           <p><b>Logs</b> face the way you place them. <b>Creative</b>: double-tap jump to fly.</p>
           <p>🔥 <b>Nether portal:</b> build a 4×5 obsidian frame, then light it (press <b>G</b> / 🔥) and step through.</p>
@@ -83,6 +84,7 @@
     <!-- Top-right controls -->
     <div id="top-controls">
       <span id="daynight" title="Time of day">☀️</span>
+      <button class="icon-btn" id="inv-btn" title="Inventory &amp; Crafting">🎒</button>
       <button class="icon-btn" id="menu-btn" title="Menu">☰</button>
     </div>
 
@@ -112,7 +114,11 @@
   <div id="pause" class="screen hidden">
     <div class="menu-panel">
       <h2>Inventory &amp; Crafting</h2>
-      <h3 class="sub">Items</h3>
+      <div class="sub-row">
+        <h3 class="sub">Armor <span id="armor-points"></span></h3>
+      </div>
+      <div id="armor-row"></div>
+      <h3 class="sub">Items <span class="sub-hint">(tap armor to equip)</span></h3>
       <div id="inventory-grid"></div>
       <h3 class="sub">Crafting</h3>
       <div id="crafting-list"></div>

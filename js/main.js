@@ -116,6 +116,7 @@ function initWorld(seed) {
   miningActive = false; miningTarget = null; miningProgress = 0;
   furnaceOpen = false; $('furnace').classList.add('hidden');
   timeOfDay = 0.25; spawnTimer = 0; hurtCD = 0;
+  crops = []; cropTimer = 0;
   buildItemIcons();
   setupInventory();
   buildCrafting();
@@ -217,11 +218,19 @@ function setDimensionVisuals() {
 const inventory = {};        // itemId -> count (Infinity in creative)
 let hotbarItems = [];        // itemIds shown on the hotbar
 
-const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD,
-                   ITEM.S_PICK, ITEM.S_AXE, ITEM.S_SHOVEL, ITEM.S_SWORD,
-                   ITEM.I_PICK, ITEM.I_AXE, ITEM.I_SHOVEL, ITEM.I_SWORD,
+const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD, ITEM.W_HOE,
+                   ITEM.S_PICK, ITEM.S_AXE, ITEM.S_SHOVEL, ITEM.S_SWORD, ITEM.S_HOE,
+                   ITEM.I_PICK, ITEM.I_AXE, ITEM.I_SHOVEL, ITEM.I_SWORD, ITEM.I_HOE,
                    ITEM.D_PICK, ITEM.D_AXE, ITEM.D_SHOVEL, ITEM.D_SWORD];
+// extra non-block items shown in creative
+const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, ITEM.BREAD,
+  ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
+  ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
 let furnaceOpen = false;
+
+// armor + farming state
+const equippedArmor = { helmet: 0, chest: 0, legs: 0, boots: 0 };
+let crops = [], cropTimer = 0;
 
 function iconStyle(id) {
   const icon = itemIcon(id);
@@ -232,14 +241,17 @@ function iconStyle(id) {
 
 function setupInventory() {
   for (const k in inventory) delete inventory[k];
+  equippedArmor.helmet = equippedArmor.chest = equippedArmor.legs = equippedArmor.boots = 0;
   if (selectedMode === 'creative') {
     for (const id of PALETTE) inventory[id] = Infinity;
     for (const id of ALL_TOOLS) inventory[id] = Infinity;
+    for (const id of CREATIVE_EXTRA) inventory[id] = Infinity;
   } else {
     // friendly starter kit so mining isn't a slog
     inventory[BLOCK.WOOD] = 6;
     inventory[ITEM.W_PICK] = 1;
     inventory[ITEM.W_AXE] = 1;
+    inventory[ITEM.WHEAT_SEEDS] = 3;
   }
   refreshHotbar(true);
 }
@@ -263,7 +275,7 @@ function activeTool() { const it = activeItem(); return TOOLS[it] ? it : 0; }
 function refreshHotbar(reset) {
   const prev = reset ? null : hotbarItems[hotbarIndex];
   if (selectedMode === 'creative') {
-    hotbarItems = [...ALL_TOOLS, ...PALETTE];
+    hotbarItems = [...ALL_TOOLS, ...PALETTE, ...CREATIVE_EXTRA];
   } else {
     const owned = Object.keys(inventory).map(Number).filter((id) => (inventory[id] || 0) > 0);
     owned.sort((a, b) => (isTool(b) - isTool(a)) || (a - b));  // tools first
@@ -303,10 +315,11 @@ function selectHotbar(i) {
 
 // ---- inventory + crafting panel (pause screen) ----
 function buildInventory() {
+  buildArmorSlots();
   const grid = $('inventory-grid');
   grid.innerHTML = '';
   const ids = selectedMode === 'creative'
-    ? [...ALL_TOOLS, ...PALETTE]
+    ? [...ALL_TOOLS, ...PALETTE, ...CREATIVE_EXTRA]
     : Object.keys(inventory).map(Number).filter((id) => (inventory[id] || 0) > 0);
   if (ids.length === 0) { grid.innerHTML = '<p class="empty">Mine some blocks…</p>'; }
   ids.forEach((id) => {
@@ -316,13 +329,63 @@ function buildInventory() {
     it.className = 'inv-item';
     it.innerHTML = `<div class="swatch" style="${iconStyle(id)}"></div>` +
       `<span class="count">${count || ''}</span><span class="lbl">${itemName(id)}</span>`;
-    it.addEventListener('click', () => { selectHotbarItem(id); togglePause(); });
+    it.addEventListener('click', () => {
+      if (isArmor(id)) { equipArmor(id); }
+      else { selectHotbarItem(id); togglePause(); }
+    });
     grid.appendChild(it);
   });
 }
 function selectHotbarItem(id) {
   const i = hotbarItems.indexOf(id);
   if (i >= 0) selectHotbar(i);
+}
+
+// ---- armor ----
+const ARMOR_SLOTS = ['helmet', 'chest', 'legs', 'boots'];
+function armorPoints() {
+  let p = 0;
+  for (const s of ARMOR_SLOTS) { const id = equippedArmor[s]; if (id && ARMOR[id]) p += ARMOR[id].points; }
+  return p;
+}
+function reduceDamage(d) {
+  const factor = 1 - Math.min(0.8, armorPoints() * 0.04);
+  return Math.max(0, Math.round(d * factor));
+}
+function equipArmor(id) {
+  const slot = ARMOR[id].slot;
+  if ((inventory[id] || 0) <= 0) return;
+  const old = equippedArmor[slot];
+  take(id, 1);
+  if (old) give(old, 1);
+  equippedArmor[slot] = id;
+  buildInventory();
+  flash('Equipped ' + itemName(id));
+}
+function unequipArmor(slot) {
+  const id = equippedArmor[slot];
+  if (!id) return;
+  equippedArmor[slot] = 0;
+  give(id, 1);
+  buildInventory();
+}
+function buildArmorSlots() {
+  const row = $('armor-row');
+  if (!row) return;
+  row.innerHTML = '';
+  for (const slot of ARMOR_SLOTS) {
+    const id = equippedArmor[slot];
+    const cell = document.createElement('div');
+    cell.className = 'armor-slot' + (id ? ' filled' : '');
+    cell.title = slot;
+    cell.innerHTML = id
+      ? `<div class="swatch" style="${iconStyle(id)}"></div>`
+      : `<span class="armor-ph">${slot[0].toUpperCase()}</span>`;
+    cell.addEventListener('click', () => unequipArmor(slot));
+    row.appendChild(cell);
+  }
+  const pts = $('armor-points');
+  if (pts) pts.textContent = armorPoints() ? '🛡️ ' + armorPoints() : '';
 }
 
 function buildCrafting() {
@@ -435,6 +498,7 @@ function setupInput() {
   window.addEventListener('keydown', (e) => {
     keys[e.code] = true;
     if (e.code === 'Escape') { if (furnaceOpen) closeFurnace(); else togglePause(); }
+    if (e.code === 'KeyE') { if (furnaceOpen) closeFurnace(); else togglePause(); }  // inventory
     if (e.code === 'KeyF') player && player.toggleFly();
     if (e.code === 'KeyG') ignitePortal();
     if (e.code.startsWith('Digit')) {
@@ -478,6 +542,7 @@ function setupInput() {
 
   // ----- buttons -----
   $('menu-btn').addEventListener('click', togglePause);
+  $('inv-btn').addEventListener('click', togglePause);
   $('resume-btn').addEventListener('click', togglePause);
   $('quit-btn').addEventListener('click', quitToMenu);
   $('furnace-close').addEventListener('click', closeFurnace);
@@ -608,7 +673,8 @@ function raycast(maxDist = 6) {
   let t = 0;
   while (t <= maxDist) {
     const b = world.getBlock(x, y, z);
-    if (b !== BLOCK.AIR && BLOCK_INFO[b] && BLOCK_INFO[b].solid) {
+    const bi = BLOCK_INFO[b];
+    if (b !== BLOCK.AIR && bi && (bi.solid || bi.crop)) {
       return { x, y, z, nx, ny, nz, block: b };
     }
     if (tMaxX < tMaxY && tMaxX < tMaxZ) {
@@ -628,7 +694,8 @@ function onBreakPress() {
   // melee first if we're aiming at a mob
   const t = TOOLS[activeItem()];
   const dmg = (t && t.attack) || 1;
-  if (mobs.attack(player.getEyePos(), player.getDirection(), 3.2, dmg)) return;
+  const drops = mobs.attack(player.getEyePos(), player.getDirection(), 3.2, dmg);
+  if (drops) { if (selectedMode === 'survival') for (const d of drops) give(d.id, d.n); return; }
   if (selectedMode === 'creative') { mineInstant(); return; }
   miningActive = true;            // survival: hold to break (handled in loop)
 }
@@ -640,27 +707,52 @@ function mineInstant() {
   const hit = raycast();
   if (!hit || BLOCK_INFO[hit.block].unbreakable) return;
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
+  if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
 }
 function doBreakSurvival(hit) {
   if (BLOCK_INFO[hit.block].unbreakable) return;
   const tool = activeTool();
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
+  if (BLOCK_INFO[hit.block].crop) { harvestCrop(hit.block, hit.x, hit.y, hit.z); return; }
   const drop = blockDrop(hit.block, tool);
   if (drop) give(drop.id, drop.n);
+  // grass occasionally yields wheat seeds
+  if (hit.block === BLOCK.GRASS && Math.random() < 0.2) give(ITEM.WHEAT_SEEDS, 1);
 }
 
+// place a block OR use the held item (eat / till / plant)
 function placeBlock() {
   if (!running || paused || furnaceOpen) return;
+  const item = activeItem();
+  if (isFood(item)) { eatFood(item); return; }   // food needs no target
   const hit = raycast();
   if (!hit) return;
-  // interact with stations instead of placing
+  // interact with stations
   if (hit.block === BLOCK.FURNACE) { openFurnace(); return; }
   if (hit.block === BLOCK.CRAFTING_TABLE) { togglePause(); return; }
-  const item = activeItem();
-  if (!isBlockItem(item) || !PALETTE.includes(item)) return;   // only placeable blocks
+  // hoe: till grass/dirt into farmland
+  const tool = TOOLS[item];
+  if (tool && tool.type === 'hoe') {
+    if ((hit.block === BLOCK.GRASS || hit.block === BLOCK.DIRT) &&
+        world.getBlock(hit.x, hit.y + 1, hit.z) === BLOCK.AIR) {
+      world.setBlock(hit.x, hit.y, hit.z, BLOCK.FARMLAND); flash('Tilled soil');
+    }
+    return;
+  }
+  // seeds: plant on farmland
+  if (item === ITEM.WHEAT_SEEDS) {
+    if (hit.block === BLOCK.FARMLAND && world.getBlock(hit.x, hit.y + 1, hit.z) === BLOCK.AIR) {
+      world.setBlock(hit.x, hit.y + 1, hit.z, BLOCK.WHEAT0);
+      crops.push({ x: hit.x, y: hit.y + 1, z: hit.z, stage: 0 });
+      if (selectedMode === 'survival') take(ITEM.WHEAT_SEEDS, 1);
+      flash('Planted wheat');
+    }
+    return;
+  }
+  // otherwise place a block
+  if (!isBlockItem(item) || !PALETTE.includes(item)) return;
   if (selectedMode === 'survival' && !(inventory[item] > 0)) return;
   const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
-  // orient logs along the axis of the clicked face
   let id = item;
   if (item === BLOCK.WOOD) {
     if (hit.nx !== 0) id = BLOCK.WOOD_X;
@@ -670,6 +762,37 @@ function placeBlock() {
   if (world.getBlock(px, py, pz) !== BLOCK.AIR) return;
   world.setBlock(px, py, pz, id);
   if (selectedMode === 'survival') take(item, 1);
+}
+
+// ---- farming helpers ----
+function removeCrop(x, y, z) { crops = crops.filter((c) => !(c.x === x && c.y === y && c.z === z)); }
+function harvestCrop(block, x, y, z) {
+  removeCrop(x, y, z);
+  give(ITEM.WHEAT_SEEDS, 1);
+  if (block === BLOCK.WHEAT2) give(ITEM.WHEAT, 1 + (Math.random() < 0.5 ? 1 : 0));
+}
+function eatFood(item) {
+  if (selectedMode !== 'survival') { flash('No need to eat in creative'); return; }
+  if (hunger >= 20 && health >= 20) { flash('Already full'); return; }
+  const f = FOOD[item];
+  hunger = Math.min(20, hunger + f.hunger);
+  if (f.heal) health = Math.min(20, health + f.heal);
+  take(item, 1); updateStats(); flash('Ate ' + itemName(item));
+}
+function growCrops(dt) {
+  if (dimension !== 'overworld' || crops.length === 0) return;
+  cropTimer += dt;
+  if (cropTimer < 2.5) return;
+  cropTimer = 0;
+  for (const c of crops) {
+    if (c.stage >= 2) continue;
+    if (Math.random() < 0.3) {
+      const cur = world.getBlock(c.x, c.y, c.z);
+      if (cur < BLOCK.WHEAT0 || cur > BLOCK.WHEAT2) continue;   // got removed
+      c.stage++;
+      world.setBlock(c.x, c.y, c.z, c.stage === 1 ? BLOCK.WHEAT1 : BLOCK.WHEAT2);
+    }
+  }
 }
 
 // mining progress bar near the crosshair (frac < 0 hides it)
@@ -841,11 +964,11 @@ function loop(now) {
   const wasGround = player.onGround;
   player.update(dt, input);
 
-  // fall damage in survival
+  // fall damage in survival (reduced by armor)
   if (selectedMode === 'survival' && !wasGround && player.onGround) {
     const impact = -prevVy;
     if (impact > 14) {
-      health -= Math.floor((impact - 14) * 1.4);
+      health -= reduceDamage(Math.floor((impact - 14) * 1.4));
       health = Math.max(0, health);
       updateStats();
       if (health <= 0) respawn();
@@ -902,8 +1025,9 @@ function loop(now) {
     portalTimer = 0;
   }
 
-  // day/night + lighting
+  // day/night + lighting + crops
   updateDayNight(dt);
+  growCrops(dt);
 
   // hostile mobs spawn at night in the overworld; burn off at dawn
   if (dimension === 'overworld') {
@@ -923,7 +1047,7 @@ function loop(now) {
   const contact = mobs.update(dt, player.pos);
   hurtCD -= dt;
   if (selectedMode === 'survival' && contact > 0 && hurtCD <= 0) {
-    health = Math.max(0, health - contact); updateStats(); hurtCD = 0.5;
+    health = Math.max(0, health - reduceDamage(contact)); updateStats(); hurtCD = 0.5;
     if (health <= 0) respawn();
   }
 

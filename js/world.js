@@ -323,7 +323,8 @@ class World {
         for (let x = 0; x < CHUNK; x++) {
           const b = ch.blocks[this._idx(x, y, z)];
           if (b === BLOCK.AIR) continue;
-          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL);
+          const bInfo = BLOCK_INFO[b];
+          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL || (bInfo && bInfo.crop));
           const wx = ox + x, wz = oz + z;
 
           for (const d of DIRS) {

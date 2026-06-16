@@ -25,6 +25,9 @@ Build, mine, and explore procedurally generated blocky worlds with passive anima
 - **Four tool tiers** — wooden, stone, **iron** (from smelted ingots) and **diamond** (from mined diamonds) pickaxes, axes, shovels and swords, each faster than the last.
 - **Day/night cycle & lighting** — a real per-block light system: the sky brightens and darkens over an ~8-minute cycle, caves are dark, and **torches** (craft from coal + stick), glowstone and lava cast light that falls off with distance.
 - **Hostile mobs & combat** — **zombies** spawn at night, chase you and deal damage; they burn off at dawn. Fight back with the break action — **swords** hit hardest — with knockback and health bars.
+- **Armor** — craft leather and iron helmets, chestplates, leggings and boots (leather drops from cows); equip them from the inventory screen to reduce incoming damage.
+- **Farming & food** — craft a hoe to till soil, plant **wheat seeds** (found in grass), let crops grow through three stages, then harvest wheat → **bread**. Animals drop food (porkchops, chicken). Eat to refill the hunger bar.
+- **Inventory & crafting screen** — open with **E** or the 🎒 button: see your items, equip armor, and craft.
 - **3 passive mobs** — 🐷 Pig, 🐮 Cow, 🐔 Chicken — boxy models that wander, follow the terrain, and animate as they walk.
 - **Full mobile support** — on-screen joystick, look-to-drag, and jump / place / break buttons. Desktop gets mouse-look + keyboard.
 - **A proper main menu** to pick mode, world type and seed, plus an in-game pause/inventory screen.

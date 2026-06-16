@@ -78,6 +78,9 @@ class Mob {
     this.hp = 10;
     this.dead = false;
     this.kbx = 0; this.kbz = 0;   // knockback velocity
+    this.drop = type === 'cow' ? { id: ITEM.LEATHER, n: 1 }
+      : type === 'pig' ? { id: ITEM.PORKCHOP, n: 1 }
+      : { id: ITEM.CHICKEN, n: 1 };
   }
 
   place(x, y, z) { this.pos.set(x, y, z); }
@@ -315,7 +318,8 @@ class MobManager {
     }
   }
 
-  // player melee: damage the nearest mob in front within reach. Returns true if hit.
+  // player melee: damage the nearest mob in front within reach.
+  // Returns null if nothing was hit, else an array of {id,n} drops from kills.
   attack(eye, dir, reach, dmg) {
     let best = null, bestT = reach;
     const consider = (m) => {
@@ -328,15 +332,17 @@ class MobManager {
     };
     for (const m of this.hostiles) consider(m);
     for (const m of this.mobs) consider(m);
-    if (!best) return false;
+    if (!best) return null;
     const kx = best.pos.x - eye.x, kz = best.pos.z - eye.z;
     const kl = Math.hypot(kx, kz) || 1;
     best.takeHit(dmg, kx / kl, kz / kl);
+    const drops = [];
     if (best.dead) {
+      if (best.drop) drops.push(best.drop);
       if (this.hostiles.includes(best)) { best.dispose(this.scene); this.hostiles.splice(this.hostiles.indexOf(best), 1); }
       else { best.dispose(this.scene); this.mobs.splice(this.mobs.indexOf(best), 1); }
     }
-    return true;
+    return drops;
   }
 
   clearHostiles() {
