@@ -199,9 +199,19 @@ function initWorld(seed, save) {
       world.preload(player.pos.x, player.pos.z);
     }
   } else {
+    world.preload(sx, sz);                                   // generate terrain first
     const sy = world.surfaceY(Math.floor(sx), Math.floor(sz));
     player.pos.set(sx, sy + 1, sz);
-    world.preload(sx, sz);
+  }
+
+  // safety: never start embedded in terrain (rescues old under-map saves too)
+  {
+    const fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z);
+    if (world.isSolid(fx, Math.floor(player.pos.y), fz) || world.isSolid(fx, Math.floor(player.pos.y) + 1, fz)) {
+      const fy = dimension === 'nether' ? world.floorY(fx, fz, 40) : world.surfaceY(fx, fz);
+      player.pos.set(fx + 0.5, fy + 0.1, fz + 0.5);
+      player.vel.set(0, 0, 0);
+    }
   }
 
   if (dimension === 'nether') { mobs = netherMobs; }
