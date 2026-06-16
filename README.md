@@ -27,6 +27,8 @@ Build, mine, and explore procedurally generated blocky worlds with passive anima
 - **Hostile mobs & combat** — **zombies** spawn at night, chase you and deal damage; they burn off at dawn. Fight back with the break action — **swords** hit hardest — with knockback and health bars.
 - **Armor** — craft leather and iron helmets, chestplates, leggings and boots (leather drops from cows); equip them from the inventory screen to reduce incoming damage.
 - **Farming & food** — craft a hoe to till soil, plant **wheat seeds** (found in grass), let crops grow through three stages, then harvest wheat → **bread**. Animals drop food (porkchops, chicken). Eat to refill the hunger bar.
+- **Saplings & trees** — leaves drop **saplings**; plant one on grass or dirt and it grows into a full tree over time, so you never run out of wood.
+- **Skyblock starter chest** — new skyblock worlds spawn with a chest of starter supplies (saplings, seeds, dirt, cobblestone and food) so you can bootstrap the island.
 - **Inventory & crafting screen** — open with **E** or the 🎒 button: see your items, equip armor, and craft.
 - **Multiple saved worlds** — each world is its own save slot. The menu lists **Your Worlds** (play or delete each); creating a world makes a new slot with a name you choose. Worlds autosave (every ~15s, on pause, and when you leave) and stay tiny by storing only the seed plus the blocks you changed — terrain, builds, inventory, armor, crops, chests, time of day and the Nether all restore.
 - **Chests / storage** — craft a chest (8 planks) and interact with it to open a storage screen; tap items to move them between you and the chest. Breaking a chest returns its contents.

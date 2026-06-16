@@ -204,6 +204,25 @@ class World {
     this._set(ch, x, top + 1, z, BLOCK.LEAVES);
   }
 
+  // Grow a tree at runtime (from a sapling). Uses setBlock so it persists as
+  // edits and remeshes; only overwrites air/leaves so it won't gouge builds.
+  placeTree(wx, wy, wz) {
+    const h = 4 + (Math.random() * 2 | 0);
+    const soft = (b) => b === BLOCK.AIR || b === BLOCK.SAPLING || b === BLOCK.LEAVES;
+    for (let i = 0; i < h; i++) if (soft(this.getBlock(wx, wy + i, wz))) this.setBlock(wx, wy + i, wz, BLOCK.WOOD, false);
+    const top = wy + h;
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++)
+        for (let dy = -2; dy <= 0; dy++) {
+          if (Math.abs(dx) === 2 && Math.abs(dz) === 2) continue;
+          if (dy === 0 && dx === 0 && dz === 0) continue;
+          if (this.getBlock(wx + dx, top + dy, wz + dz) === BLOCK.AIR) this.setBlock(wx + dx, top + dy, wz + dz, BLOCK.LEAVES, false);
+        }
+    if (this.getBlock(wx, top, wz) === BLOCK.AIR) this.setBlock(wx, top, wz, BLOCK.LEAVES, false);
+    if (this.getBlock(wx, top + 1, wz) === BLOCK.AIR) this.setBlock(wx, top + 1, wz, BLOCK.LEAVES, false);
+    this.remeshArea(wx - 2, wx + 2, wz - 2, wz + 2);
+  }
+
   // The Nether: netherrack floor with lava lakes, a netherrack ceiling,
   // glowstone clusters, and bedrock caps top & bottom.
   _genNether(cx, cz, ch) {

@@ -173,7 +173,8 @@ function initWorld(seed, save) {
   chestOpen = false; $('chest').classList.add('hidden');
   timeOfDay = save ? save.timeOfDay : 0.25; spawnTimer = 0; hurtCD = 0;
   crops = save && save.crops ? save.crops : [];
-  cropTimer = 0;
+  saplings = save && save.saplings ? save.saplings : [];
+  cropTimer = 0; saplingTimer = 0;
   buildItemIcons();
   setupInventory();
   buildCrafting();
@@ -202,6 +203,8 @@ function initWorld(seed, save) {
     world.preload(sx, sz);                                   // generate terrain first
     const sy = world.surfaceY(Math.floor(sx), Math.floor(sz));
     player.pos.set(sx, sy + 1, sz);
+    // skyblock: give a starter chest on the island
+    if (selectedWorld === 'skyblock') addSkyblockChest();
   }
 
   // safety: never start embedded in terrain (rescues old under-map saves too)
@@ -329,7 +332,7 @@ const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD, ITEM.W_
                    ITEM.I_PICK, ITEM.I_AXE, ITEM.I_SHOVEL, ITEM.I_SWORD, ITEM.I_HOE,
                    ITEM.D_PICK, ITEM.D_AXE, ITEM.D_SHOVEL, ITEM.D_SWORD];
 // extra non-block items shown in creative
-const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, ITEM.BREAD,
+const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, BLOCK.SAPLING, ITEM.BREAD,
   ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
   ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
 let furnaceOpen = false;
@@ -337,6 +340,7 @@ let furnaceOpen = false;
 // armor + farming state
 const equippedArmor = { helmet: 0, chest: 0, legs: 0, boots: 0 };
 let crops = [], cropTimer = 0;
+let saplings = [], saplingTimer = 0;
 
 function iconStyle(id) {
   const icon = itemIcon(id);
@@ -796,7 +800,7 @@ function raycast(maxDist = 6) {
 
 // ---- mining ----
 function onBreakPress() {
-  if (!running || paused || furnaceOpen || chestOpen) return;
+  if (!running || paused || furnaceOpen || chestOpen || settingsOpen) return;
   // melee first if we're aiming at a mob
   const t = TOOLS[activeItem()];
   const dmg = (t && t.attack) || 1;
@@ -813,24 +817,27 @@ function mineInstant() {
   const hit = raycast();
   if (!hit || BLOCK_INFO[hit.block].unbreakable) return;
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
-  if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
+  if (hit.block === BLOCK.SAPLING) removeSapling(hit.x, hit.y, hit.z);
+  else if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
 }
 function doBreakSurvival(hit) {
   if (BLOCK_INFO[hit.block].unbreakable) return;
   const tool = activeTool();
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
+  if (hit.block === BLOCK.SAPLING) { removeSapling(hit.x, hit.y, hit.z); give(BLOCK.SAPLING, 1); return; }
   if (BLOCK_INFO[hit.block].crop) { harvestCrop(hit.block, hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
   const drop = blockDrop(hit.block, tool);
   if (drop) give(drop.id, drop.n);
-  // grass occasionally yields wheat seeds
+  // grass occasionally yields wheat seeds; leaves occasionally yield a sapling
   if (hit.block === BLOCK.GRASS && Math.random() < 0.2) give(ITEM.WHEAT_SEEDS, 1);
+  if (hit.block === BLOCK.LEAVES && Math.random() < 0.1) give(BLOCK.SAPLING, 1);
 }
 
 // place a block OR use the held item (eat / till / plant)
 function placeBlock() {
-  if (!running || paused || furnaceOpen || chestOpen) return;
+  if (!running || paused || furnaceOpen || chestOpen || settingsOpen) return;
   const item = activeItem();
   if (isFood(item)) { eatFood(item); return; }   // food needs no target
   const hit = raycast();
@@ -845,6 +852,17 @@ function placeBlock() {
     if ((hit.block === BLOCK.GRASS || hit.block === BLOCK.DIRT) &&
         world.getBlock(hit.x, hit.y + 1, hit.z) === BLOCK.AIR) {
       world.setBlock(hit.x, hit.y, hit.z, BLOCK.FARMLAND); flash('Tilled soil');
+    }
+    return;
+  }
+  // sapling: plant on grass/dirt, grows into a tree
+  if (item === BLOCK.SAPLING) {
+    if ((hit.block === BLOCK.GRASS || hit.block === BLOCK.DIRT) &&
+        world.getBlock(hit.x, hit.y + 1, hit.z) === BLOCK.AIR) {
+      world.setBlock(hit.x, hit.y + 1, hit.z, BLOCK.SAPLING);
+      saplings.push({ x: hit.x, y: hit.y + 1, z: hit.z });
+      if (selectedMode === 'survival') take(BLOCK.SAPLING, 1);
+      flash('Planted sapling');
     }
     return;
   }
@@ -887,6 +905,22 @@ function eatFood(item) {
   hunger = Math.min(20, hunger + f.hunger);
   if (f.heal) health = Math.min(20, health + f.heal);
   take(item, 1); updateStats(); flash('Ate ' + itemName(item));
+}
+function removeSapling(x, y, z) { saplings = saplings.filter((s) => !(s.x === x && s.y === y && s.z === z)); }
+function growSaplings(dt) {
+  if (saplings.length === 0) return;
+  saplingTimer += dt;
+  if (saplingTimer < 5) return;
+  saplingTimer = 0;
+  for (const s of saplings.slice()) {
+    if (Math.random() < 0.25) {
+      if (world.getBlock(s.x, s.y, s.z) !== BLOCK.SAPLING) { removeSapling(s.x, s.y, s.z); continue; }
+      // needs a couple of blocks of headroom to grow
+      if (world.getBlock(s.x, s.y + 1, s.z) !== BLOCK.AIR) continue;
+      removeSapling(s.x, s.y, s.z);
+      world.placeTree(s.x, s.y, s.z);
+    }
+  }
 }
 function growCrops(dt) {
   if (dimension !== 'overworld' || crops.length === 0) return;
@@ -1078,7 +1112,7 @@ function saveGame() {
       inv: selectedMode === 'survival' ? { ...inventory } : null,
       armor: { ...equippedArmor },
       activeItem: hotbarItems[hotbarIndex],
-      crops, chests, returnPos,
+      crops, saplings, chests, returnPos,
       overworldEdits: overworld ? overworld.serializeEdits() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
     };
@@ -1216,6 +1250,19 @@ function dumpChest(x, y, z) {
   const store = chests[k];
   if (store) { for (const id in store) give(+id, store[id]); delete chests[k]; }
 }
+// starter chest placed on the skyblock island
+function addSkyblockChest() {
+  const cx = 9, cz = 9, cy = world.surfaceY(cx, cz);
+  if (world.getBlock(cx, cy, cz) !== BLOCK.AIR) return;
+  world.setBlock(cx, cy, cz, BLOCK.CHEST);
+  const k = chestKey(cx, cy, cz);
+  chests[k] = {};
+  chests[k][BLOCK.SAPLING] = 2;
+  chests[k][ITEM.WHEAT_SEEDS] = 3;
+  chests[k][BLOCK.DIRT] = 8;
+  chests[k][BLOCK.COBBLE] = 6;
+  chests[k][ITEM.BREAD] = 2;
+}
 
 // ---------------- main loop ----------------
 function loop(now) {
@@ -1295,6 +1342,7 @@ function loop(now) {
   // day/night + lighting + crops
   updateDayNight(dt);
   growCrops(dt);
+  growSaplings(dt);
 
   // hostile mobs spawn at night in the overworld; burn off at dawn
   if (dimension === 'overworld') {
