@@ -120,7 +120,45 @@ class World {
     if (this.type === 'flat') return this._genFlat(ch);
     if (this.type === 'skyblock') return this._genSkyblock(cx, cz, ch);
     if (this.type === 'nether') return this._genNether(cx, cz, ch);
-    return this._genRegular(cx, cz, ch);
+    if (this.type === 'aether') return this._genAether(cx, cz, ch);
+    if (this.type === 'woolworld') return this._genWool(cx, cz, ch);
+    return this._genRegular(cx, cz, ch);   // 'regular' and 'simple'
+  }
+
+  // 478: a flat world of randomly-coloured wool
+  _genWool(cx, cz, ch) {
+    const cols = [BLOCK.WOOL, BLOCK.WOOL_RED, BLOCK.WOOL_ORANGE, BLOCK.WOOL_YELLOW, BLOCK.WOOL_LIME,
+      BLOCK.WOOL_GREEN, BLOCK.WOOL_CYAN, BLOCK.WOOL_BLUE, BLOCK.WOOL_PURPLE, BLOCK.WOOL_PINK, BLOCK.WOOL_BLACK];
+    for (let x = 0; x < CHUNK; x++)
+      for (let z = 0; z < CHUNK; z++) {
+        const wx = cx * CHUNK + x, wz = cz * CHUNK + z;
+        this._set(ch, x, 0, z, BLOCK.BEDROCK);
+        for (let y = 1; y <= 3; y++) {
+          const pick = cols[(this.noise._hash3(wx, y * 31, wz) * cols.length) | 0];
+          this._set(ch, x, y, z, pick);
+        }
+      }
+  }
+
+  // the Aether (cheats only): floating grass islands in a bright sky
+  _genAether(cx, cz, ch) {
+    const BASE = 40;
+    for (let x = 0; x < CHUNK; x++)
+      for (let z = 0; z < CHUNK; z++) {
+        const wx = cx * CHUNK + x, wz = cz * CHUNK + z;
+        const n = this.noise.fbm(wx, wz, 3, 0.5, 0.045);     // island mask
+        if (n < 0.42) continue;                              // open sky
+        const top = BASE + Math.floor((n - 0.42) * 26);
+        const thick = 2 + Math.floor((n - 0.42) * 22);
+        for (let y = top - thick; y <= top; y++) {
+          if (y < 0 || y >= HEIGHT) continue;
+          this._set(ch, x, y, z, y === top ? BLOCK.AETHER_GRASS : BLOCK.DIRT);
+        }
+        // occasional glowstone underside + trees on top
+        const r = mulberry32((this.seed ^ (wx * 91) ^ (wz * 13)) >>> 0);
+        if (r() < 0.02 && x >= 2 && x <= 13 && z >= 2 && z <= 13) this._tree(ch, x, top + 1, z, r);
+        else if (r() < 0.04) this._set(ch, x, top - thick - 1, z, BLOCK.GLOWSTONE);
+      }
   }
 
   _set(ch, lx, y, lz, id) {
@@ -161,16 +199,23 @@ class World {
     for (let x = 0; x < CHUNK; x++) {
       for (let z = 0; z < CHUNK; z++) {
         const wx = cx * CHUNK + x, wz = cz * CHUNK + z;
-        // Cross sea level near the noise's mean (~0.357) so lakes & oceans are
-        // common everywhere; a low-frequency hill term adds mountains.
-        const raw = this.noise.fbm(wx, wz, 4, 0.5, 0.03);
-        const hill = this.noise.fbm(wx + 1000, wz - 1000, 2, 0.5, 0.013);
-        let height = Math.floor(SEA_LEVEL + (raw - 0.38) * 66 + (hill - 0.35) * 12);
-        // lowland ponds/lakes (high-frequency noise self-averages, so these
-        // appear reliably on every seed; mountains are left untouched).
-        const pond = this.noise.fbm(wx + 7000, wz + 7000, 3, 0.5, 0.075);
-        if (pond > 0.66 && height >= SEA_LEVEL - 2 && height <= SEA_LEVEL + 8) {
-          height = SEA_LEVEL - 1 - Math.min(3, Math.floor((pond - 0.66) * 22));
+        let height;
+        if (this.type === 'simple') {
+          // 123: simple, smooth rolling terrain (still has everything else)
+          const s = this.noise.fbm(wx, wz, 2, 0.5, 0.012);
+          height = Math.floor(SEA_LEVEL + (s - 0.4) * 34);
+        } else {
+          // Cross sea level near the noise's mean (~0.357) so lakes & oceans are
+          // common everywhere; a low-frequency hill term adds mountains.
+          const raw = this.noise.fbm(wx, wz, 4, 0.5, 0.03);
+          const hill = this.noise.fbm(wx + 1000, wz - 1000, 2, 0.5, 0.013);
+          height = Math.floor(SEA_LEVEL + (raw - 0.38) * 66 + (hill - 0.35) * 12);
+          // lowland ponds/lakes (high-frequency noise self-averages, so these
+          // appear reliably on every seed; mountains are left untouched).
+          const pond = this.noise.fbm(wx + 7000, wz + 7000, 3, 0.5, 0.075);
+          if (pond > 0.66 && height >= SEA_LEVEL - 2 && height <= SEA_LEVEL + 8) {
+            height = SEA_LEVEL - 1 - Math.min(3, Math.floor((pond - 0.66) * 22));
+          }
         }
         if (height < 1) height = 1;
 
@@ -444,7 +489,7 @@ class World {
           const b = ch.blocks[this._idx(x, y, z)];
           if (b === BLOCK.AIR) continue;
           const bInfo = BLOCK_INFO[b];
-          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL || (bInfo && bInfo.crop));
+          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL || b === BLOCK.AETHER_PORTAL || (bInfo && bInfo.crop));
           const wx = ox + x, wz = oz + z;
 
           for (const d of DIRS) {

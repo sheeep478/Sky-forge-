@@ -76,10 +76,13 @@ const input = { mx: 0, mz: 0, jump: false, sprint: false, up: false, down: false
 // survival stats
 let health = 20, hunger = 20, hungerTimer = 0, regenTimer = 0, lavaTimer = 0;
 
-// dimensions (overworld <-> nether)
+// dimensions (overworld <-> nether / aether)
 let gameSeed = 0, dimension = 'overworld';
-let overworld = null, netherWorld = null, overworldMobs = null, netherMobs = null;
-let portalCooldown = 0, portalTimer = 0, returnPos = null, pendingNetherEdits = null;
+let overworld = null, netherWorld = null, aetherWorld = null;
+let overworldMobs = null, netherMobs = null, aetherMobs = null;
+let portalCooldown = 0, portalTimer = 0, returnPos = null;
+let pendingNetherEdits = null, pendingAetherEdits = null;
+let cheats = false;            // "sv cheats 1" seed: all items + the Aether
 let saveTimer = 0;
 
 // multi-world saving
@@ -118,10 +121,18 @@ function startGame() {
   currentWorldId = 'w' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
   chests = {};
 
+  // ---- secret Easter-egg seeds ----
+  const rawSeed = ($('seed-input').value || '').trim();
+  const lower = rawSeed.toLowerCase().replace(/\s+/g, ' ');
+  cheats = false;
+  if (rawSeed === '478') selectedWorld = 'woolworld';          // flat random-wool world + sheep
+  else if (rawSeed === '123') selectedWorld = 'simple';        // simple terrain
+  else if (lower === 'sv cheats 1') cheats = true;             // all items + the Aether
+
   menuEl.classList.add('hidden');
   loadingEl.classList.remove('hidden');
 
-  const seedStr = $('seed-input').value.trim() || ('sf' + Math.floor(Math.random() * 1e9));
+  const seedStr = rawSeed || ('sf' + Math.floor(Math.random() * 1e9));
   const seed = hashSeed(seedStr);
 
   // let the loading frame paint before heavy work
@@ -135,22 +146,34 @@ function ensureNether() {
   netherMobs = new MobManager(netherWorld, scene);
   if (pendingNetherEdits) { netherWorld.loadEdits(pendingNetherEdits); pendingNetherEdits = null; }
 }
+function ensureAether() {
+  if (aetherWorld) return;
+  aetherWorld = new World(scene, (gameSeed ^ 0x5bf03635) >>> 0, 'aether', overworld ? overworld.genVersion : undefined);
+  if (isTouch) aetherWorld.renderDistance = 3;
+  aetherMobs = new MobManager(aetherWorld, scene);
+  if (pendingAetherEdits) { aetherWorld.loadEdits(pendingAetherEdits); pendingAetherEdits = null; }
+}
+function worldFor(dim) { return dim === 'nether' ? netherWorld : dim === 'aether' ? aetherWorld : overworld; }
+function mobsFor(dim) { return dim === 'nether' ? netherMobs : dim === 'aether' ? aetherMobs : overworldMobs; }
 
 function initWorld(seed, save) {
   if (!renderer) setupRenderer();
 
-  // reset scene contents (both dimensions)
+  // reset scene contents (all dimensions)
   if (overworld) overworld.hide();
   if (netherWorld) netherWorld.hide();
+  if (aetherWorld) aetherWorld.hide();
   if (overworldMobs) overworldMobs.clear();
   if (netherMobs) netherMobs.clear();
-  netherWorld = null; netherMobs = null;
+  if (aetherMobs) aetherMobs.clear();
+  netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null;
   portalCooldown = 0; portalTimer = 0;
 
-  if (save) { selectedMode = save.mode; selectedWorld = save.type; }
+  if (save) { selectedMode = save.mode; selectedWorld = save.type; cheats = !!save.cheats; }
   dimension = 'overworld';
   returnPos = save && save.returnPos ? save.returnPos : null;
   pendingNetherEdits = save && save.netherEdits && save.netherEdits.length ? save.netherEdits : null;
+  pendingAetherEdits = save && save.aetherEdits && save.aetherEdits.length ? save.aetherEdits : null;
 
   scene.clear();
   gameSeed = save ? (save.seed >>> 0) : (seed >>> 0);
@@ -180,6 +203,7 @@ function initWorld(seed, save) {
   craftGrid.fill(0); heldCraftItem = 0;
   buildItemIcons();
   setupInventory();
+  if (cheats && !save) applyCheats();      // "sv cheats 1": all items + best armor
   buildCrafting();
 
   if (save) {
@@ -198,6 +222,10 @@ function initWorld(seed, save) {
     if (save.dimension === 'nether') {
       ensureNether();
       world = netherWorld; mobs = netherMobs; dimension = 'nether'; player.world = world;
+      world.preload(player.pos.x, player.pos.z);
+    } else if (save.dimension === 'aether') {
+      ensureAether();
+      world = aetherWorld; mobs = aetherMobs; dimension = 'aether'; player.world = world;
       world.preload(player.pos.x, player.pos.z);
     } else {
       world.preload(player.pos.x, player.pos.z);
@@ -221,11 +249,13 @@ function initWorld(seed, save) {
   }
 
   if (dimension === 'nether') { mobs = netherMobs; }
+  else if (dimension === 'aether') { mobs = aetherMobs; }
   else {
     mobs = new MobManager(world, scene);
     overworldMobs = mobs;
-    if (selectedWorld !== 'skyblock') mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 5 : 8, 16);
-    else mobs.spawnInitial(player.pos.x, player.pos.z, 3, 3);
+    if (selectedWorld === 'woolworld') mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 14 : 24, 26, 'sheep');
+    else if (selectedWorld === 'skyblock') mobs.spawnInitial(player.pos.x, player.pos.z, 3, 3);
+    else mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 5 : 8, 16);
   }
   if (!overworldMobs) { overworldMobs = new MobManager(overworld, scene); }
 
@@ -297,7 +327,7 @@ function lerpColor(a, b, t) {
 
 function updateDayNight(dt) {
   timeOfDay = (timeOfDay + dt / DAY_LENGTH) % 1;
-  if (dimension === 'nether') { world.dayUniform.value = 1.0; return; }
+  if (dimension === 'nether' || dimension === 'aether') { world.dayUniform.value = 1.0; return; }
   const b = skyBrightness();
   world.dayUniform.value = b;
   ambient.intensity = 0.35 + 0.45 * b;
@@ -322,6 +352,9 @@ function setDimensionVisuals() {
   if (dimension === 'nether') {
     scene.background = new THREE.Color(0x2a0d0d);
     scene.fog = new THREE.Fog(0x2a0d0d, CHUNK * 1.4, CHUNK * (isTouch ? 2.6 : 3.4));
+  } else if (dimension === 'aether') {
+    scene.background = new THREE.Color(0xdff0ff);
+    scene.fog = new THREE.Fog(0xdff0ff, CHUNK * 3, CHUNK * (isTouch ? 3.6 : 4.6));
   } else {
     scene.background = new THREE.Color(0x8fc7ee);
     scene.fog = new THREE.Fog(0x8fc7ee, CHUNK * 2.5, CHUNK * (isTouch ? 3.2 : 4.2));
@@ -366,6 +399,25 @@ function setupInventory() {
   }
   // survival starts with an empty inventory — punch a tree to begin
   refreshHotbar(true);
+}
+
+// "sv cheats 1": fill the inventory with every item and equip the best armor
+function applyCheats() {
+  const misc = [ITEM.STICK, ITEM.COAL, ITEM.DIAMOND, ITEM.IRON_INGOT, ITEM.GOLD_INGOT,
+    ITEM.LEATHER, ITEM.WHEAT, ITEM.WHEAT_SEEDS, ITEM.BREAD, ITEM.PORKCHOP, ITEM.CHICKEN,
+    ITEM.MUTTON, ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET, BLOCK.SAPLING, BLOCK.TALL_GRASS];
+  for (const id of PALETTE) inventory[id] = 64;
+  for (const id of ALL_TOOLS) inventory[id] = 1;
+  for (const id of misc) inventory[id] = 16;
+  for (const id of [ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
+    ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS]) inventory[id] = 1;
+  // best armor equipped (iron is the best tier we have)
+  equippedArmor.helmet = ITEM.I_HELM; equippedArmor.chest = ITEM.I_CHEST;
+  equippedArmor.legs = ITEM.I_LEGS; equippedArmor.boots = ITEM.I_BOOTS;
+  delete inventory[ITEM.I_HELM]; delete inventory[ITEM.I_CHEST];
+  delete inventory[ITEM.I_LEGS]; delete inventory[ITEM.I_BOOTS];
+  refreshHotbar(true);
+  flash('sv cheats 1 — light a GLOWSTONE portal to reach the Aether');
 }
 
 // give / take items
@@ -1107,9 +1159,10 @@ function overlapsPlayer(bx, by, bz) {
   return bx + 1 > minX && bx < maxX && bz + 1 > minZ && bz < maxZ && by + 1 > minY && by < maxY;
 }
 
-// ---------------- nether portal ----------------
-// Detect a rectangular air area enclosed by obsidian, in a vertical plane.
-function findPortalArea(w, ix, iy, iz) {
+// ---------------- portals ----------------
+// Detect a rectangular air area enclosed by `frame` blocks, in a vertical plane.
+function findPortalArea(w, ix, iy, iz, frame) {
+  frame = frame || BLOCK.OBSIDIAN;
   if (w.getBlock(ix, iy, iz) !== BLOCK.AIR) return null;
   for (const plane of ['z', 'x']) {
     const fixed = plane === 'z' ? iz : ix;
@@ -1131,9 +1184,9 @@ function findPortalArea(w, ix, iy, iz) {
       for (let b = bot; b <= top; b++)
         if (get(a, b) !== BLOCK.AIR) ok = false;
     for (let b = bot; b <= top && ok; b++)
-      if (get(left - 1, b) !== BLOCK.OBSIDIAN || get(right + 1, b) !== BLOCK.OBSIDIAN) ok = false;
+      if (get(left - 1, b) !== frame || get(right + 1, b) !== frame) ok = false;
     for (let a = left; a <= right && ok; a++)
-      if (get(a, bot - 1) !== BLOCK.OBSIDIAN || get(a, top + 1) !== BLOCK.OBSIDIAN) ok = false;
+      if (get(a, bot - 1) !== frame || get(a, top + 1) !== frame) ok = false;
     if (!ok) continue;
 
     const cells = [];
@@ -1152,22 +1205,25 @@ function findPortalArea(w, ix, iy, iz) {
 function ignitePortal() {
   if (!running || paused) return;
   const hit = raycast(6);
-  if (!hit || hit.block !== BLOCK.OBSIDIAN) { flash('Aim at an obsidian frame'); return; }
+  // obsidian frame -> Nether; glowstone frame -> Aether (cheats seed only)
+  let fill = null;
+  if (hit && hit.block === BLOCK.OBSIDIAN) fill = BLOCK.PORTAL;
+  else if (hit && hit.block === BLOCK.GLOWSTONE && cheats) fill = BLOCK.AETHER_PORTAL;
+  else { flash(cheats ? 'Aim at an obsidian or glowstone frame' : 'Aim at an obsidian frame'); return; }
   const ix = hit.x + hit.nx, iy = hit.y + hit.ny, iz = hit.z + hit.nz;
-  const area = findPortalArea(world, ix, iy, iz);
+  const area = findPortalArea(world, ix, iy, iz, hit.block);
   if (!area) { flash('No valid portal frame'); return; }
-  for (const c of area.cells) world.setBlock(c[0], c[1], c[2], BLOCK.PORTAL, false);
+  for (const c of area.cells) world.setBlock(c[0], c[1], c[2], fill, false);
   world.remeshArea(area.minX, area.maxX, area.minZ, area.maxZ);
-  flash('Portal lit! Step through…');
+  flash((fill === BLOCK.AETHER_PORTAL ? 'Aether portal' : 'Portal') + ' lit! Step through…');
 }
 
-// Build a ready-made 4x5 obsidian portal (2x3 interior) at a destination.
-function buildPortalStructure(w, bx, by, bz) {
+// Build a ready-made 4x5 portal (2x3 interior) at a destination.
+function buildPortalStructure(w, bx, by, bz, frame, fill) {
   for (let x = bx - 1; x <= bx + 2; x++)
     for (let y = by - 1; y <= by + 3; y++) {
       const edge = (x === bx - 1 || x === bx + 2 || y === by - 1 || y === by + 3);
-      if (edge) w.setBlock(x, y, bz, BLOCK.OBSIDIAN, false);
-      else w.setBlock(x, y, bz, BLOCK.PORTAL, false);
+      w.setBlock(x, y, bz, edge ? frame : fill, false);
     }
   // clear standing room in front of the portal
   for (let x = bx - 1; x <= bx + 2; x++)
@@ -1176,21 +1232,31 @@ function buildPortalStructure(w, bx, by, bz) {
   w.remeshArea(bx - 2, bx + 3, bz - 1, bz + 3);
 }
 
-function teleport() {
+// travel between the overworld and a target dimension ('nether' | 'aether')
+function teleport(target) {
   const entryX = Math.floor(player.pos.x), entryZ = Math.floor(player.pos.z);
   world.hide(); mobs.hide();
 
   if (dimension === 'overworld') {
     returnPos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
-    ensureNether();
-    dimension = 'nether';
-    world = netherWorld; mobs = netherMobs; player.world = world;
-    const dx = Math.round(entryX / 4), dz = Math.round(entryZ / 4);
-    world.preload(dx + 0.5, dz + 0.5);
-    const by = world.floorY(dx, dz, 40);
-    buildPortalStructure(world, dx, by, dz);
-    const sy = world.floorY(dx, dz + 1, 40);
-    player.pos.set(dx + 0.5, sy, dz + 1.5);   // stand in front of the portal
+    if (target === 'aether') ensureAether(); else ensureNether();
+    dimension = target;
+    world = worldFor(target); mobs = mobsFor(target); player.world = world;
+    if (target === 'aether') {
+      const dx = entryX, dz = entryZ;
+      world.preload(dx + 0.5, dz + 0.5);
+      let by = world.surfaceY(dx, dz);
+      if (by <= 0) { for (let x = dx - 2; x <= dx + 2; x++) for (let z = dz - 2; z <= dz + 2; z++) world.setBlock(x, 44, z, BLOCK.AETHER_GRASS); by = 45; }
+      buildPortalStructure(world, dx, by, dz, BLOCK.GLOWSTONE, BLOCK.AETHER_PORTAL);
+      player.pos.set(dx + 0.5, by + 1, dz + 1.5);
+    } else {
+      const dx = Math.round(entryX / 4), dz = Math.round(entryZ / 4);
+      world.preload(dx + 0.5, dz + 0.5);
+      const by = world.floorY(dx, dz, 40);
+      buildPortalStructure(world, dx, by, dz, BLOCK.OBSIDIAN, BLOCK.PORTAL);
+      const sy = world.floorY(dx, dz + 1, 40);
+      player.pos.set(dx + 0.5, sy, dz + 1.5);
+    }
   } else {
     dimension = 'overworld';
     world = overworld; mobs = overworldMobs; player.world = world;
@@ -1203,7 +1269,7 @@ function teleport() {
   portalCooldown = 2.2; portalTimer = 0;
   $('mode-indicator').textContent =
     (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' +
-    (dimension === 'nether' ? 'nether' : selectedWorld);
+    (dimension === 'overworld' ? selectedWorld : dimension);
 }
 
 // transient on-screen message
@@ -1261,7 +1327,7 @@ function saveGame() {
       v: 2, id: currentWorldId, name: currentWorldName,
       seed: gameSeed, type: selectedWorld, mode: selectedMode,
       genVersion: overworld ? overworld.genVersion : 1,
-      dimension, timeOfDay,
+      cheats, dimension, timeOfDay,
       player: {
         x: player.pos.x, y: player.pos.y, z: player.pos.z,
         yaw: player.yaw, pitch: player.pitch, health, hunger,
@@ -1272,6 +1338,7 @@ function saveGame() {
       crops, saplings, chests, returnPos, spawnPoint,
       overworldEdits: overworld ? overworld.serializeEdits() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
+      aetherEdits: aetherWorld ? aetherWorld.serializeEdits() : (pendingAetherEdits || []),
     };
     localStorage.setItem(worldKey(currentWorldId), JSON.stringify(data));
     // upsert index entry
@@ -1494,15 +1561,17 @@ function loop(now) {
     } else { miningTarget = null; showMining(-1); }
   }
 
-  // nether portal: stand in a portal block briefly to travel
+  // portals: stand in a portal block briefly to travel
   if (portalCooldown > 0) portalCooldown -= dt;
-  const inPortal =
-    world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y), Math.floor(player.pos.z)) === BLOCK.PORTAL ||
-    world.getBlock(Math.floor(player.pos.x), Math.floor(player.pos.y + 1), Math.floor(player.pos.z)) === BLOCK.PORTAL;
-  if (inPortal && portalCooldown <= 0) {
+  const fx = Math.floor(player.pos.x), fz = Math.floor(player.pos.z);
+  const pf = world.getBlock(fx, Math.floor(player.pos.y), fz);
+  const pf2 = world.getBlock(fx, Math.floor(player.pos.y + 1), fz);
+  const onNether = pf === BLOCK.PORTAL || pf2 === BLOCK.PORTAL;
+  const onAether = pf === BLOCK.AETHER_PORTAL || pf2 === BLOCK.AETHER_PORTAL;
+  if ((onNether || onAether) && portalCooldown <= 0) {
     portalTimer += dt;
-    if (portalTimer > 1.0) teleport();
-  } else if (!inPortal) {
+    if (portalTimer > 1.0) teleport(onAether ? 'aether' : 'nether');
+  } else if (!onNether && !onAether) {
     portalTimer = 0;
   }
 
@@ -1548,6 +1617,8 @@ function respawn() {
   } else if (dimension === 'nether') {
     const sy = world.floorY(0, 0, 40);
     player.pos.set(0.5, sy, 0.5);
+  } else if (dimension === 'aether') {
+    player.pos.set(Math.floor(player.pos.x) + 0.5, 52, Math.floor(player.pos.z) + 0.5);
   } else {
     let sx = 0.5, sz = 0.5;
     if (selectedWorld === 'skyblock') { sx = 8.5; sz = 8.5; }

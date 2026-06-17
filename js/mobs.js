@@ -276,11 +276,11 @@ class MobManager {
     this.hostiles = [];
   }
 
-  spawnInitial(centerX, centerZ, count = 6, maxDist = 14) {
+  spawnInitial(centerX, centerZ, count = 6, maxDist = 14, forceType = null) {
     let spawned = 0, attempts = 0;
     while (spawned < count && attempts < count * 12) {
       attempts++;
-      const type = NAMES[spawned % NAMES.length];
+      const type = forceType || NAMES[spawned % NAMES.length];
       const ang = Math.random() * Math.PI * 2;
       const dist = 2 + Math.random() * (maxDist - 2);
       const bx = Math.floor(centerX + Math.cos(ang) * dist);
