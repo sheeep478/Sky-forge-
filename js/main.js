@@ -127,6 +127,7 @@ function startGame() {
   cheats = false;
   if (rawSeed === '478') selectedWorld = 'woolworld';          // flat random-wool world + sheep
   else if (rawSeed === '123') selectedWorld = 'simple';        // simple terrain
+  else if (rawSeed === '333') selectedWorld = 'sandbox';       // flat sandstone, all items, no mobs
   else if (compact === 'svcheats1') cheats = true;             // all items + the Aether
 
   menuEl.classList.add('hidden');
@@ -200,10 +201,16 @@ function initWorld(seed, save) {
   saplings = save && save.saplings ? save.saplings : [];
   spawnPoint = save && save.spawnPoint ? save.spawnPoint : null;
   cropTimer = 0; saplingTimer = 0;
+  rsFacing.clear();
+  if (save && save.rsFacing) for (const [k, v] of save.rsFacing) rsFacing.set(k, v);
   craftGrid.fill(0); heldCraftItem = 0;
   buildItemIcons();
   setupInventory();
-  if (cheats && !save) applyCheats();      // "sv cheats 1": all items + best armor
+  rsButtons = [];
+  if (!save) {
+    if (cheats) applyCheats();                        // "sv cheats 1": all + best armor + Aether
+    else if (selectedWorld === 'sandbox') giveEverything(false);   // "333": all items, no armor
+  }
   buildCrafting();
 
   if (save) {
@@ -253,7 +260,8 @@ function initWorld(seed, save) {
   else {
     mobs = new MobManager(world, scene);
     overworldMobs = mobs;
-    if (selectedWorld === 'woolworld') mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 14 : 24, 26, 'sheep');
+    if (selectedWorld === 'sandbox') { /* no mobs */ }
+    else if (selectedWorld === 'woolworld') mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 14 : 24, 26, 'sheep');
     else if (selectedWorld === 'skyblock') mobs.spawnInitial(player.pos.x, player.pos.z, 3, 3);
     else mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 5 : 8, 16);
   }
@@ -381,6 +389,7 @@ const equippedArmor = { helmet: 0, chest: 0, legs: 0, boots: 0 };
 let crops = [], cropTimer = 0;
 let saplings = [], saplingTimer = 0;
 let spawnPoint = null;   // bed respawn point {x,y,z} in the overworld
+let rsButtons = [];      // active buttons {x,y,z,t} reverting after a pulse
 
 function iconStyle(id) {
   const icon = itemIcon(id);
@@ -401,22 +410,28 @@ function setupInventory() {
   refreshHotbar(true);
 }
 
-// "sv cheats 1": fill the inventory with every item and equip the best armor
-function applyCheats() {
+// fill the inventory with everything (used by the cheats + sandbox seeds)
+function giveEverything(equipArmor) {
   const misc = [ITEM.STICK, ITEM.COAL, ITEM.DIAMOND, ITEM.IRON_INGOT, ITEM.GOLD_INGOT,
     ITEM.LEATHER, ITEM.WHEAT, ITEM.WHEAT_SEEDS, ITEM.BREAD, ITEM.PORKCHOP, ITEM.CHICKEN,
     ITEM.MUTTON, ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET, BLOCK.SAPLING, BLOCK.TALL_GRASS];
   for (const id of PALETTE) inventory[id] = 64;
+  for (const [id] of WOOL_COLORS) inventory[id] = 64;              // every wool colour
   for (const id of ALL_TOOLS) inventory[id] = 1;
   for (const id of misc) inventory[id] = 16;
-  for (const id of [ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
-    ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS]) inventory[id] = 1;
-  // best armor equipped (iron is the best tier we have)
-  equippedArmor.helmet = ITEM.I_HELM; equippedArmor.chest = ITEM.I_CHEST;
-  equippedArmor.legs = ITEM.I_LEGS; equippedArmor.boots = ITEM.I_BOOTS;
-  delete inventory[ITEM.I_HELM]; delete inventory[ITEM.I_CHEST];
-  delete inventory[ITEM.I_LEGS]; delete inventory[ITEM.I_BOOTS];
+  const armorIds = [ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
+    ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
+  for (const id of armorIds) inventory[id] = 1;
+  if (equipArmor) {
+    equippedArmor.helmet = ITEM.I_HELM; equippedArmor.chest = ITEM.I_CHEST;
+    equippedArmor.legs = ITEM.I_LEGS; equippedArmor.boots = ITEM.I_BOOTS;
+    delete inventory[ITEM.I_HELM]; delete inventory[ITEM.I_CHEST];
+    delete inventory[ITEM.I_LEGS]; delete inventory[ITEM.I_BOOTS];
+  }
   refreshHotbar(true);
+}
+function applyCheats() {
+  giveEverything(true);
   flash('sv cheats 1 — light a GLOWSTONE portal to reach the Aether');
 }
 
@@ -922,7 +937,7 @@ function raycast(maxDist = 6, includeLiquid = false) {
   while (t <= maxDist) {
     const b = world.getBlock(x, y, z);
     const bi = BLOCK_INFO[b];
-    if (b !== BLOCK.AIR && bi && (bi.solid || bi.crop || (includeLiquid && bi.liquid))) {
+    if (b !== BLOCK.AIR && bi && (bi.solid || bi.crop || bi.rs || (includeLiquid && bi.liquid))) {
       return { x, y, z, nx, ny, nz, block: b };
     }
     if (tMaxX < tMaxY && tMaxX < tMaxZ) {
@@ -958,6 +973,8 @@ function mineInstant() {
   if (hit.block === BLOCK.SAPLING) removeSapling(hit.x, hit.y, hit.z);
   else if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
+  rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z);
+  maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
 }
 function doBreakSurvival(hit) {
   if (BLOCK_INFO[hit.block].unbreakable) return;
@@ -971,6 +988,8 @@ function doBreakSurvival(hit) {
   if (drop) give(drop.id, drop.n);
   // leaves occasionally yield a sapling
   if (hit.block === BLOCK.LEAVES && Math.random() < 0.1) give(BLOCK.SAPLING, 1);
+  rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z);
+  maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
 }
 
 // place a block OR use the held item (eat / till / plant)
@@ -1007,6 +1026,18 @@ function placeBlock() {
   if (hit.block === BLOCK.CHEST) { openChest(hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CRAFTING_TABLE) { openCraftingTable(); return; }
   if (hit.block === BLOCK.BED) { sleep(hit.x, hit.y, hit.z); return; }
+  // redstone: flip levers, press buttons
+  if (hit.block === BLOCK.LEVER || hit.block === BLOCK.LEVER_ON) {
+    world.setBlock(hit.x, hit.y, hit.z, hit.block === BLOCK.LEVER ? BLOCK.LEVER_ON : BLOCK.LEVER);
+    updateRedstone(world, hit.x, hit.y, hit.z);
+    return;
+  }
+  if (hit.block === BLOCK.BUTTON) {
+    world.setBlock(hit.x, hit.y, hit.z, BLOCK.BUTTON_ON);
+    rsButtons.push({ x: hit.x, y: hit.y, z: hit.z, t: 1.0 });
+    updateRedstone(world, hit.x, hit.y, hit.z);
+    return;
+  }
   // hoe: till grass/dirt into farmland (wet if near water)
   const tool = TOOLS[item];
   if (tool && tool.type === 'hoe') {
@@ -1051,8 +1082,13 @@ function placeBlock() {
   }
   if (overlapsPlayer(px, py, pz)) return;
   if (world.getBlock(px, py, pz) !== BLOCK.AIR) return;
+  // pistons/repeaters remember the direction you placed them facing
+  if (id === BLOCK.PISTON || id === BLOCK.PISTON_STICKY || id === BLOCK.REPEATER) {
+    rsFacing.set(px + ',' + py + ',' + pz, facingFromYaw(player.yaw));
+  }
   world.setBlock(px, py, pz, id);
   if (selectedMode === 'survival') take(item, 1);
+  maybeUpdateRedstone(world, px, py, pz);
 }
 
 // ---- farming helpers ----
@@ -1345,6 +1381,7 @@ function saveGame() {
       armor: { ...equippedArmor },
       activeItem: hotbarItems[hotbarIndex],
       crops, saplings, chests, returnPos, spawnPoint,
+      rsFacing: [...rsFacing.entries()],
       overworldEdits: overworld ? overworld.serializeEdits() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
       aetherEdits: aetherWorld ? aetherWorld.serializeEdits() : (pendingAetherEdits || []),
@@ -1589,9 +1626,22 @@ function loop(now) {
   growCrops(dt);
   growSaplings(dt);
   fluidTick(dt);
+  // redstone buttons revert after their pulse
+  if (rsButtons.length) {
+    for (let i = rsButtons.length - 1; i >= 0; i--) {
+      const b = rsButtons[i]; b.t -= dt;
+      if (b.t <= 0) {
+        if (world.getBlock(b.x, b.y, b.z) === BLOCK.BUTTON_ON) {
+          world.setBlock(b.x, b.y, b.z, BLOCK.BUTTON);
+          updateRedstone(world, b.x, b.y, b.z);
+        }
+        rsButtons.splice(i, 1);
+      }
+    }
+  }
 
   // hostile mobs spawn at night in the overworld; burn off at dawn
-  if (dimension === 'overworld') {
+  if (dimension === 'overworld' && selectedWorld !== 'sandbox' && selectedWorld !== 'woolworld') {
     if (isNight()) {
       spawnTimer -= dt;
       const cap = isTouch ? 5 : 9;

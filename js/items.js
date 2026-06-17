@@ -247,8 +247,15 @@ function blockDrop(blockId, toolItem) {
     case BLOCK.COAL_ORE: return { id: ITEM.COAL, n: 1 };
     case BLOCK.DIAMOND_ORE: return { id: ITEM.DIAMOND, n: 1 };
     case BLOCK.WOOD_X: case BLOCK.WOOD_Z: return { id: BLOCK.WOOD, n: 1 };
-    case BLOCK.FARMLAND: return { id: BLOCK.DIRT, n: 1 };
+    case BLOCK.FARMLAND: case BLOCK.FARMLAND_WET: return { id: BLOCK.DIRT, n: 1 };
     case BLOCK.LEAVES: return null;
+    // redstone: lit/on variants drop their placeable base form
+    case BLOCK.REDSTONE_LAMP_ON: return { id: BLOCK.REDSTONE_LAMP, n: 1 };
+    case BLOCK.LEVER_ON: return { id: BLOCK.LEVER, n: 1 };
+    case BLOCK.BUTTON_ON: return { id: BLOCK.BUTTON, n: 1 };
+    case BLOCK.REDSTONE_TORCH_OFF: return { id: BLOCK.REDSTONE_TORCH, n: 1 };
+    case BLOCK.REPEATER_ON: return { id: BLOCK.REPEATER, n: 1 };
+    case BLOCK.PISTON_HEAD: return null;
     case BLOCK.SNOW: return { id: BLOCK.SNOW, n: 1 };
     default: return { id: blockId, n: 1 };
   }

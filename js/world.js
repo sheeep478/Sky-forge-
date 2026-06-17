@@ -122,7 +122,17 @@ class World {
     if (this.type === 'nether') return this._genNether(cx, cz, ch);
     if (this.type === 'aether') return this._genAether(cx, cz, ch);
     if (this.type === 'woolworld') return this._genWool(cx, cz, ch);
+    if (this.type === 'sandbox') return this._genSandbox(ch);
     return this._genRegular(cx, cz, ch);   // 'regular' and 'simple'
+  }
+
+  // 333: a flat sandstone testing world (no mobs)
+  _genSandbox(ch) {
+    for (let x = 0; x < CHUNK; x++)
+      for (let z = 0; z < CHUNK; z++) {
+        this._set(ch, x, 0, z, BLOCK.BEDROCK);
+        for (let y = 1; y <= 3; y++) this._set(ch, x, y, z, BLOCK.SANDSTONE);
+      }
   }
 
   // 478: a flat world of randomly-coloured wool
@@ -489,7 +499,7 @@ class World {
           const b = ch.blocks[this._idx(x, y, z)];
           if (b === BLOCK.AIR) continue;
           const bInfo = BLOCK_INFO[b];
-          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL || b === BLOCK.AETHER_PORTAL || (bInfo && bInfo.crop));
+          const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL || b === BLOCK.AETHER_PORTAL || (bInfo && (bInfo.crop || bInfo.rs)));
           const wx = ox + x, wz = oz + z;
 
           for (const d of DIRS) {
