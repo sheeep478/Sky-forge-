@@ -57,8 +57,11 @@ function buildChicken() {
 }
 
 function buildSheep() {
+  return buildSheepModel(0xe8e8e8);
+}
+function buildSheepModel(bodyColor) {
   const g = new THREE.Group();
-  const wool = mat(0xe8e8e8), skin = mat(0xd8b9a6), leg = mat(0x6b5746);
+  const wool = mat(bodyColor), skin = mat(0xd8b9a6), leg = mat(0x6b5746);
   g.add(box(0.85, 0.7, 1.05, wool, 0, 0.75, 0));           // fluffy body
   const head = box(0.42, 0.42, 0.4, skin, 0, 0.7, -0.7); g.add(head);
   g.add(box(0.46, 0.5, 0.2, wool, 0, 0.85, -0.55));        // wool on forehead
@@ -69,7 +72,19 @@ function buildSheep() {
   return { group: g, legs, head };
 }
 
-const BUILDERS = { pig: buildPig, cow: buildCow, chicken: buildChicken, sheep: buildSheep };
+// ore / resource sheep: a sheep whose wool is the resource, dropping it when killed
+const ORE_SHEEP = {
+  sheep_coal:     { color: 0x2a2a2e, drop: ITEM.COAL },
+  sheep_iron:     { color: 0xd0d0d0, drop: ITEM.IRON_INGOT },
+  sheep_gold:     { color: 0xf0c632, drop: ITEM.GOLD_INGOT },
+  sheep_diamond:  { color: 0x4fe0d8, drop: ITEM.DIAMOND },
+  sheep_redstone: { color: 0xb02a18, drop: BLOCK.REDSTONE_DUST },
+};
+
+const BUILDERS = {
+  pig: buildPig, cow: buildCow, chicken: buildChicken, sheep: buildSheep,
+};
+for (const t in ORE_SHEEP) BUILDERS[t] = () => buildSheepModel(ORE_SHEEP[t].color);
 const NAMES = ['pig', 'cow', 'chicken', 'sheep'];
 
 class Mob {
@@ -91,7 +106,8 @@ class Mob {
     this.hp = 10;
     this.dead = false;
     this.kbx = 0; this.kbz = 0;   // knockback velocity
-    this.drop = type === 'cow' ? { id: ITEM.LEATHER, n: 1 }
+    this.drop = ORE_SHEEP[type] ? { id: ORE_SHEEP[type].drop, n: 1 + (Math.random() * 2 | 0) }
+      : type === 'cow' ? { id: ITEM.LEATHER, n: 1 }
       : type === 'pig' ? { id: ITEM.PORKCHOP, n: 1 }
       : type === 'sheep' ? { id: BLOCK.WOOL, n: 1 }
       : { id: ITEM.CHICKEN, n: 1 };

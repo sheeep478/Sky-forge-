@@ -83,6 +83,7 @@ let overworldMobs = null, netherMobs = null, aetherMobs = null;
 let portalCooldown = 0, portalTimer = 0, returnPos = null;
 let pendingNetherEdits = null, pendingAetherEdits = null;
 let cheats = false;            // "sv cheats 1" seed: all items + the Aether
+let peaceful = false;          // beta: no hostile mobs spawn, no hunger loss
 let saveTimer = 0;
 
 // multi-world saving
@@ -124,8 +125,9 @@ function startGame() {
   // ---- secret Easter-egg seeds ----
   const rawSeed = ($('seed-input').value || '').trim();
   const compact = rawSeed.toLowerCase().replace(/\s+/g, '');   // ignore spaces/case
-  cheats = false;
+  cheats = false; peaceful = false;
   if (rawSeed === '478') selectedWorld = 'woolworld';          // flat random-wool world + sheep
+  else if (compact === 'sheeep478') { selectedWorld = 'woolworld'; peaceful = true; }  // + statue + peaceful
   else if (rawSeed === '123') selectedWorld = 'simple';        // simple terrain
   else if (rawSeed === '333') selectedWorld = 'sandbox';       // flat sandstone, all items, no mobs
   else if (compact === 'svcheats1') cheats = true;             // all items + the Aether
@@ -170,7 +172,7 @@ function initWorld(seed, save) {
   netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null;
   portalCooldown = 0; portalTimer = 0;
 
-  if (save) { selectedMode = save.mode; selectedWorld = save.type; cheats = !!save.cheats; }
+  if (save) { selectedMode = save.mode; selectedWorld = save.type; cheats = !!save.cheats; peaceful = !!save.peaceful; }
   dimension = 'overworld';
   returnPos = save && save.returnPos ? save.returnPos : null;
   pendingNetherEdits = save && save.netherEdits && save.netherEdits.length ? save.netherEdits : null;
@@ -244,6 +246,8 @@ function initWorld(seed, save) {
     player.pos.set(sx, sy + 1, sz);
     // skyblock: give a starter chest on the island
     if (selectedWorld === 'skyblock') addSkyblockChest();
+    // sheeep478: a giant wool sheep statue greets you at spawn
+    if (selectedWorld === 'woolworld' && peaceful) buildSheepStatue(Math.floor(sx) + 8, Math.floor(sz));
   }
 
   // safety: never start embedded in terrain (rescues old under-map saves too)
@@ -262,8 +266,11 @@ function initWorld(seed, save) {
     mobs = new MobManager(world, scene);
     overworldMobs = mobs;
     if (selectedWorld === 'sandbox') { /* no mobs */ }
-    else if (selectedWorld === 'woolworld') mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 14 : 24, 26, 'sheep');
-    else if (selectedWorld === 'skyblock') mobs.spawnInitial(player.pos.x, player.pos.z, 3, 3);
+    else if (selectedWorld === 'woolworld') {
+      mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 12 : 20, 26, 'sheep');
+      for (const t of ['sheep_coal', 'sheep_iron', 'sheep_gold', 'sheep_diamond', 'sheep_redstone'])
+        mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 2 : 3, 28, t);   // ore/resource sheep
+    } else if (selectedWorld === 'skyblock') mobs.spawnInitial(player.pos.x, player.pos.z, 3, 3);
     else mobs.spawnInitial(player.pos.x, player.pos.z, isTouch ? 5 : 8, 16);
   }
   if (!overworldMobs) { overworldMobs = new MobManager(overworld, scene); }
@@ -1380,7 +1387,7 @@ function saveGame() {
       v: 2, id: currentWorldId, name: currentWorldName,
       seed: gameSeed, type: selectedWorld, mode: selectedMode,
       genVersion: overworld ? overworld.genVersion : 1,
-      cheats, dimension, timeOfDay,
+      cheats, peaceful, dimension, timeOfDay,
       player: {
         x: player.pos.x, y: player.pos.y, z: player.pos.z,
         yaw: player.yaw, pitch: player.pitch, health, hunger,
@@ -1551,6 +1558,25 @@ function addSkyblockChest() {
   chests[k][BLOCK.COBBLE] = 6;
   chests[k][ITEM.BREAD] = 2;
 }
+// sheeep478 Easter egg: a big blocky wool sheep statue at spawn
+function buildSheepStatue(cx, cz) {
+  const gy = world.surfaceY(cx, cz);                 // ground level under the statue
+  const W = BLOCK.WOOL, K = BLOCK.WOOL_BLACK;
+  const set = (x, y, z, id) => world.setBlock(cx + x, gy + y, cz + z, id, false);
+  let minX = 0, maxX = 0, minZ = 0, maxZ = 0;
+  const fill = (x0, x1, y0, y1, z0, z1, id) => {
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) set(x, y, z, id);
+    minX = Math.min(minX, x0); maxX = Math.max(maxX, x1);
+    minZ = Math.min(minZ, z0); maxZ = Math.max(maxZ, z1);
+  };
+  // legs (4), fluffy body, head and black eyes — a chunky Minecraft-style sheep
+  for (const [lx, lz] of [[-2, -2], [1, -2], [-2, 1], [1, 1]]) fill(lx, lx + 1, 0, 1, lz, lz + 1, W);
+  fill(-2, 2, 2, 5, -2, 2, W);                       // woolly body
+  fill(-1, 1, 3, 6, 3, 4, W);                        // neck/back fluff toward the head
+  fill(-1, 1, 2, 4, 3, 5, W);                        // head block out front
+  set(-1, 4, 5, K); set(1, 4, 5, K);                 // two eyes
+  world.remeshArea(cx + minX - 1, cx + maxX + 1, cz + minZ - 1, cz + maxZ + 1);
+}
 
 // ---------------- main loop ----------------
 function loop(now) {
@@ -1580,7 +1606,7 @@ function loop(now) {
   // hunger + regen (survival, gentle)
   if (selectedMode === 'survival') {
     hungerTimer += dt;
-    if (hungerTimer > 14) { hungerTimer = 0; if (hunger > 0) { hunger--; updateStats(); } }
+    if (!peaceful && hungerTimer > 14) { hungerTimer = 0; if (hunger > 0) { hunger--; updateStats(); } }
     if (hunger > 16 && health < 20) {
       regenTimer += dt;
       if (regenTimer > 4) { regenTimer = 0; health = Math.min(20, health + 1); updateStats(); }
@@ -1649,7 +1675,7 @@ function loop(now) {
   }
 
   // hostile mobs spawn at night in the overworld; burn off at dawn
-  if (dimension === 'overworld' && selectedWorld !== 'sandbox' && selectedWorld !== 'woolworld') {
+  if (dimension === 'overworld' && !peaceful && selectedWorld !== 'sandbox' && selectedWorld !== 'woolworld') {
     if (isNight()) {
       spawnTimer -= dt;
       const cap = isTouch ? 5 : 9;
