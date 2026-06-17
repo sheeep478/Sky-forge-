@@ -123,11 +123,11 @@ function startGame() {
 
   // ---- secret Easter-egg seeds ----
   const rawSeed = ($('seed-input').value || '').trim();
-  const lower = rawSeed.toLowerCase().replace(/\s+/g, ' ');
+  const compact = rawSeed.toLowerCase().replace(/\s+/g, '');   // ignore spaces/case
   cheats = false;
   if (rawSeed === '478') selectedWorld = 'woolworld';          // flat random-wool world + sheep
   else if (rawSeed === '123') selectedWorld = 'simple';        // simple terrain
-  else if (lower === 'sv cheats 1') cheats = true;             // all items + the Aether
+  else if (compact === 'svcheats1') cheats = true;             // all items + the Aether
 
   menuEl.classList.add('hidden');
   loadingEl.classList.remove('hidden');
@@ -1206,13 +1206,22 @@ function ignitePortal() {
   if (!running || paused) return;
   const hit = raycast(6);
   // obsidian frame -> Nether; glowstone frame -> Aether (cheats seed only)
-  let fill = null;
-  if (hit && hit.block === BLOCK.OBSIDIAN) fill = BLOCK.PORTAL;
-  else if (hit && hit.block === BLOCK.GLOWSTONE && cheats) fill = BLOCK.AETHER_PORTAL;
-  else { flash(cheats ? 'Aim at an obsidian or glowstone frame' : 'Aim at an obsidian frame'); return; }
-  const ix = hit.x + hit.nx, iy = hit.y + hit.ny, iz = hit.z + hit.nz;
-  const area = findPortalArea(world, ix, iy, iz, hit.block);
-  if (!area) { flash('No valid portal frame'); return; }
+  let frame = null, fill = null;
+  if (hit && hit.block === BLOCK.OBSIDIAN) { frame = BLOCK.OBSIDIAN; fill = BLOCK.PORTAL; }
+  else if (hit && hit.block === BLOCK.GLOWSTONE && cheats) { frame = BLOCK.GLOWSTONE; fill = BLOCK.AETHER_PORTAL; }
+  else if (hit && hit.block === BLOCK.GLOWSTONE) { flash('Aether portals need the secret seed'); return; }
+  else { flash('Aim at an obsidian frame'); return; }
+  // try the air cell in front first, then any air neighbour of the frame block,
+  // so it lights no matter which face/edge you're aiming at.
+  const cand = [[hit.x + hit.nx, hit.y + hit.ny, hit.z + hit.nz]];
+  for (const n of _NB6) cand.push([hit.x + n[0], hit.y + n[1], hit.z + n[2]]);
+  let area = null;
+  for (const [ix, iy, iz] of cand) {
+    if (world.getBlock(ix, iy, iz) !== BLOCK.AIR) continue;
+    area = findPortalArea(world, ix, iy, iz, frame);
+    if (area) break;
+  }
+  if (!area) { flash('Need a hollow 4×5 frame (sealed edges, empty middle)'); return; }
   for (const c of area.cells) world.setBlock(c[0], c[1], c[2], fill, false);
   world.remeshArea(area.minX, area.maxX, area.minZ, area.maxZ);
   flash((fill === BLOCK.AETHER_PORTAL ? 'Aether portal' : 'Portal') + ' lit! Step through…');
