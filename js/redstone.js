@@ -3,12 +3,13 @@
 // repeaters (directional diode) and pistons (push/pull one block).
 // Globals from earlier scripts: BLOCK, BLOCK_INFO, HEIGHT.
 
-const rsFacing = new Map();          // "x,y,z" -> 'n'|'s'|'e'|'w' (pistons/repeaters)
+const rsFacing = new Map();          // "x,y,z" -> 'n'|'s'|'e'|'w' (pistons/repeaters/comparators)
+const rsCompSub = new Set();         // comparator positions in subtract mode
 const RS_DIR = { n: [0, 0, -1], s: [0, 0, 1], e: [1, 0, 0], w: [-1, 0, 0] };
 const RS_N6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 function rsKey(x, y, z) { return x + ',' + y + ',' + z; }
 
-function isRS(id) { return id >= BLOCK.REDSTONE_DUST && id <= BLOCK.PISTON_HEAD; }
+function isRS(id) { return id >= BLOCK.REDSTONE_DUST && id <= BLOCK.COMPARATOR_ON; }
 function facingFromYaw(yaw) {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   if (Math.abs(fx) > Math.abs(fz)) return fx > 0 ? 'e' : 'w';
@@ -28,61 +29,80 @@ function rsPushable(id) {
   return !!(BLOCK_INFO[id] && BLOCK_INFO[id].solid);
 }
 
-// Recompute power & components in a box around (cx,cy,cz). Mutates output block
-// ids in the world; returns true if anything visually changed.
+// Recompute power & components in a box around (cx,cy,cz) using a strong/weak
+// power model (so dust->block->torch logic chains work). Mutates output block
+// ids; returns true if anything visually changed.
 function updateRedstone(world, cx, cy, cz, R) {
   R = R || 14;
   const x0 = cx - R, x1 = cx + R, y0 = Math.max(1, cy - R), y1 = Math.min(HEIGHT - 1, cy + R), z0 = cz - R, z1 = cz + R;
-  const dust = [], torch = [];
+  const at = (x, y, z) => world.getBlock(x, y, z);
+  const dirAt = (x, y, z) => RS_DIR[rsFacing.get(rsKey(x, y, z)) || 'n'];
+
+  const dust = [], torch = [], reps = [], comps = [];
   for (let x = x0; x <= x1; x++)
     for (let y = y0; y <= y1; y++)
       for (let z = z0; z <= z1; z++) {
-        const b = world.getBlock(x, y, z);
+        const b = at(x, y, z);
         if (b === BLOCK.REDSTONE_DUST) dust.push([x, y, z]);
         else if (b === BLOCK.REDSTONE_TORCH || b === BLOCK.REDSTONE_TORCH_OFF) torch.push([x, y, z]);
+        else if (b === BLOCK.REPEATER || b === BLOCK.REPEATER_ON) reps.push([x, y, z]);
+        else if (b === BLOCK.COMPARATOR || b === BLOCK.COMPARATOR_ON) comps.push([x, y, z]);
       }
 
-  const dustPow = new Map();
-  const torchOn = new Map();
-  for (const [x, y, z] of torch) torchOn.set(rsKey(x, y, z), world.getBlock(x, y, z) === BLOCK.REDSTONE_TORCH);
+  const dustPow = new Map(), torchOn = new Map(), repOn = new Map(), compOut = new Map();
+  for (const [x, y, z] of torch) torchOn.set(rsKey(x, y, z), at(x, y, z) === BLOCK.REDSTONE_TORCH);
+  for (const [x, y, z] of reps) repOn.set(rsKey(x, y, z), at(x, y, z) === BLOCK.REPEATER_ON);
+  for (const [x, y, z] of comps) compOut.set(rsKey(x, y, z), at(x, y, z) === BLOCK.COMPARATOR_ON ? 1 : 0);
 
-  // does a hard source feed INTO cell (x,y,z)?
-  const fedByHardSource = (x, y, z) => {
+  // strong power of a solid block (transmits 15 to adjacent dust)
+  const strongPower = (x, y, z) => {
+    let s = 0;
+    const bel = at(x, y - 1, z);
+    if ((bel === BLOCK.REDSTONE_TORCH || bel === BLOCK.REDSTONE_TORCH_OFF) && torchOn.get(rsKey(x, y - 1, z))) s = 15;
     for (const n of RS_N6) {
-      const nx = x + n[0], ny = y + n[1], nz = z + n[2];
-      const b = world.getBlock(nx, ny, nz);
-      if (b === BLOCK.REDSTONE_BLOCK || b === BLOCK.LEVER_ON || b === BLOCK.BUTTON_ON) return true;
-      if (b === BLOCK.REDSTONE_TORCH || b === BLOCK.REDSTONE_TORCH_OFF) { if (torchOn.get(rsKey(nx, ny, nz))) return true; }
-      if (b === BLOCK.REPEATER_ON) { const d = RS_DIR[rsFacing.get(rsKey(nx, ny, nz)) || 'n']; if (nx + d[0] === x && ny + d[1] === y && nz + d[2] === z) return true; }
+      const nx = x + n[0], ny = y + n[1], nz = z + n[2], nb = at(nx, ny, nz);
+      if (nb === BLOCK.REPEATER || nb === BLOCK.REPEATER_ON) { const d = dirAt(nx, ny, nz); if (repOn.get(rsKey(nx, ny, nz)) && nx + d[0] === x && ny + d[1] === y && nz + d[2] === z) s = 15; }
+      else if (nb === BLOCK.COMPARATOR || nb === BLOCK.COMPARATOR_ON) { const d = dirAt(nx, ny, nz); if (nx + d[0] === x && ny + d[1] === y && nz + d[2] === z) s = Math.max(s, compOut.get(rsKey(nx, ny, nz)) || 0); }
     }
-    return false;
+    return s;
   };
-  // a solid block / output is "powered" if a hard source feeds it, or an adjacent
-  // dust carries power, or a repeater points into it.
+  // signal supplied from cell (fx,fy,fz) into adjacent target (tx,ty,tz)
+  const signalInto = (tx, ty, tz, fx, fy, fz) => {
+    const b = at(fx, fy, fz), k = rsKey(fx, fy, fz);
+    if (b === BLOCK.REDSTONE_DUST) return dustPow.get(k) || 0;
+    if (b === BLOCK.REDSTONE_BLOCK || b === BLOCK.LEVER_ON || b === BLOCK.BUTTON_ON) return 15;
+    if (b === BLOCK.REDSTONE_TORCH || b === BLOCK.REDSTONE_TORCH_OFF) return torchOn.get(k) ? 15 : 0;
+    if (b === BLOCK.REPEATER || b === BLOCK.REPEATER_ON) { const d = dirAt(fx, fy, fz); return (repOn.get(k) && fx + d[0] === tx && fy + d[1] === ty && fz + d[2] === tz) ? 15 : 0; }
+    if (b === BLOCK.COMPARATOR || b === BLOCK.COMPARATOR_ON) { const d = dirAt(fx, fy, fz); return (fx + d[0] === tx && fy + d[1] === ty && fz + d[2] === tz) ? (compOut.get(k) || 0) : 0; }
+    if (BLOCK_INFO[b] && BLOCK_INFO[b].solid) return strongPower(fx, fy, fz);
+    return 0;
+  };
+  // is a solid block powered (lights lamps, turns off torches, drives pistons)?
   const blockPowered = (x, y, z) => {
-    if (fedByHardSource(x, y, z)) return true;
+    if (strongPower(x, y, z) > 0) return true;
     for (const n of RS_N6) {
-      const nx = x + n[0], ny = y + n[1], nz = z + n[2];
-      if (world.getBlock(nx, ny, nz) === BLOCK.REDSTONE_DUST && (dustPow.get(rsKey(nx, ny, nz)) || 0) > 0) return true;
+      const nx = x + n[0], ny = y + n[1], nz = z + n[2], nb = at(nx, ny, nz);
+      if (nb === BLOCK.REDSTONE_BLOCK || nb === BLOCK.LEVER_ON || nb === BLOCK.BUTTON_ON) return true;
+      if (nb === BLOCK.REDSTONE_DUST && (dustPow.get(rsKey(nx, ny, nz)) || 0) > 0) return true;
+      // a torch weakly powers neighbours EXCEPT the block it sits on
+      if ((nb === BLOCK.REDSTONE_TORCH || nb === BLOCK.REDSTONE_TORCH_OFF) && torchOn.get(rsKey(nx, ny, nz)) && !(nx === x && ny - 1 === y && nz === z)) return true;
     }
     return false;
   };
 
-  for (let iter = 0; iter < 12; iter++) {
+  for (let iter = 0; iter < 16; iter++) {
     let changed = false;
-    // 1. dust power from sources + hard-powered solid blocks, then BFS decay
+    // 1. dust power: seed from non-dust sources, then BFS decay
     const np = new Map(); const q = [];
     for (const [x, y, z] of dust) {
-      const k = rsKey(x, y, z); let p = 0;
+      let p = 0;
       for (const n of RS_N6) {
         const nx = x + n[0], ny = y + n[1], nz = z + n[2];
-        const nb = world.getBlock(nx, ny, nz);
-        if (nb === BLOCK.REDSTONE_BLOCK || nb === BLOCK.LEVER_ON || nb === BLOCK.BUTTON_ON) { p = 15; }
-        else if ((nb === BLOCK.REDSTONE_TORCH || nb === BLOCK.REDSTONE_TORCH_OFF) && torchOn.get(rsKey(nx, ny, nz))) { p = 15; }
-        else if (nb === BLOCK.REPEATER_ON) { const d = RS_DIR[rsFacing.get(rsKey(nx, ny, nz)) || 'n']; if (nx + d[0] === x && ny + d[1] === y && nz + d[2] === z) p = 15; }
-        else if (BLOCK_INFO[nb] && BLOCK_INFO[nb].solid && fedByHardSource(nx, ny, nz)) { p = 15; }
+        if (at(nx, ny, nz) === BLOCK.REDSTONE_DUST) continue;
+        const s = signalInto(x, y, z, nx, ny, nz);
+        if (s > p) p = s;
       }
-      np.set(k, p); if (p > 0) q.push([x, y, z]);
+      np.set(rsKey(x, y, z), p); if (p > 0) q.push([x, y, z]);
     }
     let head = 0;
     while (head < q.length) {
@@ -90,38 +110,48 @@ function updateRedstone(world, cx, cy, cz, R) {
       if (p <= 1) continue;
       for (const n of RS_N6) {
         const nx = x + n[0], ny = y + n[1], nz = z + n[2];
-        if (world.getBlock(nx, ny, nz) !== BLOCK.REDSTONE_DUST) continue;
+        if (at(nx, ny, nz) !== BLOCK.REDSTONE_DUST) continue;
         const nk = rsKey(nx, ny, nz);
         if ((np.get(nk) || 0) < p - 1) { np.set(nk, p - 1); q.push([nx, ny, nz]); }
       }
     }
     for (const [k, v] of np) if ((dustPow.get(k) || 0) !== v) changed = true;
     dustPow.clear(); for (const [k, v] of np) dustPow.set(k, v);
-    // 2. torch inversion: off when its support block (below) is powered
+    // 2. torches: off when their support block (below) is powered
     for (const [x, y, z] of torch) {
-      const k = rsKey(x, y, z); const on = !blockPowered(x, y - 1, z);
-      if (torchOn.get(k) !== on) { torchOn.set(k, on); changed = true; }
+      const on = !blockPowered(x, y - 1, z);
+      if (torchOn.get(rsKey(x, y, z)) !== on) { torchOn.set(rsKey(x, y, z), on); changed = true; }
+    }
+    // 3. repeaters: on when the block behind them is powered (one-way diode)
+    for (const [x, y, z] of reps) {
+      const d = dirAt(x, y, z);
+      const on = signalInto(x, y, z, x - d[0], y - d[1], z - d[2]) > 0;
+      if (repOn.get(rsKey(x, y, z)) !== on) { repOn.set(rsKey(x, y, z), on); changed = true; }
+    }
+    // 4. comparators: compare / subtract back vs. the stronger side input
+    for (const [x, y, z] of comps) {
+      const d = dirAt(x, y, z);
+      const back = signalInto(x, y, z, x - d[0], y - d[1], z - d[2]);
+      const s1 = signalInto(x, y, z, x + d[2], y, z + d[0]);   // perpendicular sides
+      const s2 = signalInto(x, y, z, x - d[2], y, z - d[0]);
+      const side = Math.max(s1, s2);
+      const out = rsCompSub.has(rsKey(x, y, z)) ? Math.max(0, back - side) : (back >= side ? back : 0);
+      if ((compOut.get(rsKey(x, y, z)) || 0) !== out) { compOut.set(rsKey(x, y, z), out); changed = true; }
     }
     if (!changed) break;
   }
 
-  // 3. apply outputs
+  // apply outputs
   const changed = [];
-  const setIf = (x, y, z, id) => { if (world.getBlock(x, y, z) !== id) { world.setBlock(x, y, z, id, false); changed.push([x, y, z]); } };
+  const setIf = (x, y, z, id) => { if (at(x, y, z) !== id) { world.setBlock(x, y, z, id, false); changed.push([x, y, z]); } };
   for (let x = x0; x <= x1; x++)
     for (let y = y0; y <= y1; y++)
       for (let z = z0; z <= z1; z++) {
-        const b = world.getBlock(x, y, z);
-        if (b === BLOCK.REDSTONE_LAMP || b === BLOCK.REDSTONE_LAMP_ON) {
-          setIf(x, y, z, blockPowered(x, y, z) ? BLOCK.REDSTONE_LAMP_ON : BLOCK.REDSTONE_LAMP);
-        } else if (b === BLOCK.REDSTONE_TORCH || b === BLOCK.REDSTONE_TORCH_OFF) {
-          setIf(x, y, z, torchOn.get(rsKey(x, y, z)) ? BLOCK.REDSTONE_TORCH : BLOCK.REDSTONE_TORCH_OFF);
-        } else if (b === BLOCK.REPEATER || b === BLOCK.REPEATER_ON) {
-          const d = RS_DIR[rsFacing.get(rsKey(x, y, z)) || 'n'];
-          const bx = x - d[0], by = y - d[1], bz = z - d[2];        // input = back side
-          const on = blockPowered(bx, by, bz);
-          setIf(x, y, z, on ? BLOCK.REPEATER_ON : BLOCK.REPEATER);
-        }
+        const b = at(x, y, z);
+        if (b === BLOCK.REDSTONE_LAMP || b === BLOCK.REDSTONE_LAMP_ON) setIf(x, y, z, blockPowered(x, y, z) ? BLOCK.REDSTONE_LAMP_ON : BLOCK.REDSTONE_LAMP);
+        else if (b === BLOCK.REDSTONE_TORCH || b === BLOCK.REDSTONE_TORCH_OFF) setIf(x, y, z, torchOn.get(rsKey(x, y, z)) ? BLOCK.REDSTONE_TORCH : BLOCK.REDSTONE_TORCH_OFF);
+        else if (b === BLOCK.REPEATER || b === BLOCK.REPEATER_ON) setIf(x, y, z, repOn.get(rsKey(x, y, z)) ? BLOCK.REPEATER_ON : BLOCK.REPEATER);
+        else if (b === BLOCK.COMPARATOR || b === BLOCK.COMPARATOR_ON) setIf(x, y, z, (compOut.get(rsKey(x, y, z)) || 0) > 0 ? BLOCK.COMPARATOR_ON : BLOCK.COMPARATOR);
       }
   // 4. pistons
   for (let x = x0; x <= x1; x++)

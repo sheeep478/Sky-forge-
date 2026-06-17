@@ -201,8 +201,9 @@ function initWorld(seed, save) {
   saplings = save && save.saplings ? save.saplings : [];
   spawnPoint = save && save.spawnPoint ? save.spawnPoint : null;
   cropTimer = 0; saplingTimer = 0;
-  rsFacing.clear();
+  rsFacing.clear(); rsCompSub.clear();
   if (save && save.rsFacing) for (const [k, v] of save.rsFacing) rsFacing.set(k, v);
+  if (save && save.rsCompSub) for (const k of save.rsCompSub) rsCompSub.add(k);
   craftGrid.fill(0); heldCraftItem = 0;
   buildItemIcons();
   setupInventory();
@@ -973,7 +974,7 @@ function mineInstant() {
   if (hit.block === BLOCK.SAPLING) removeSapling(hit.x, hit.y, hit.z);
   else if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
-  rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z);
+  rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z); rsCompSub.delete(hit.x + ',' + hit.y + ',' + hit.z);
   maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
 }
 function doBreakSurvival(hit) {
@@ -988,7 +989,7 @@ function doBreakSurvival(hit) {
   if (drop) give(drop.id, drop.n);
   // leaves occasionally yield a sapling
   if (hit.block === BLOCK.LEAVES && Math.random() < 0.1) give(BLOCK.SAPLING, 1);
-  rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z);
+  rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z); rsCompSub.delete(hit.x + ',' + hit.y + ',' + hit.z);
   maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
 }
 
@@ -1038,6 +1039,13 @@ function placeBlock() {
     updateRedstone(world, hit.x, hit.y, hit.z);
     return;
   }
+  if (hit.block === BLOCK.COMPARATOR || hit.block === BLOCK.COMPARATOR_ON) {
+    const k = hit.x + ',' + hit.y + ',' + hit.z;
+    if (rsCompSub.has(k)) rsCompSub.delete(k); else rsCompSub.add(k);
+    flash(rsCompSub.has(k) ? 'Comparator: subtract' : 'Comparator: compare');
+    updateRedstone(world, hit.x, hit.y, hit.z);
+    return;
+  }
   // hoe: till grass/dirt into farmland (wet if near water)
   const tool = TOOLS[item];
   if (tool && tool.type === 'hoe') {
@@ -1082,8 +1090,8 @@ function placeBlock() {
   }
   if (overlapsPlayer(px, py, pz)) return;
   if (world.getBlock(px, py, pz) !== BLOCK.AIR) return;
-  // pistons/repeaters remember the direction you placed them facing
-  if (id === BLOCK.PISTON || id === BLOCK.PISTON_STICKY || id === BLOCK.REPEATER) {
+  // pistons/repeaters/comparators remember the direction you placed them facing
+  if (id === BLOCK.PISTON || id === BLOCK.PISTON_STICKY || id === BLOCK.REPEATER || id === BLOCK.COMPARATOR) {
     rsFacing.set(px + ',' + py + ',' + pz, facingFromYaw(player.yaw));
   }
   world.setBlock(px, py, pz, id);
@@ -1381,7 +1389,7 @@ function saveGame() {
       armor: { ...equippedArmor },
       activeItem: hotbarItems[hotbarIndex],
       crops, saplings, chests, returnPos, spawnPoint,
-      rsFacing: [...rsFacing.entries()],
+      rsFacing: [...rsFacing.entries()], rsCompSub: [...rsCompSub],
       overworldEdits: overworld ? overworld.serializeEdits() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
       aetherEdits: aetherWorld ? aetherWorld.serializeEdits() : (pendingAetherEdits || []),
