@@ -72,77 +72,131 @@ const TILE = {};
 let tileOrder = [];
 function paint(name, fn) { TILE[name] = fn; tileOrder.push(name); }
 
-// Helper: base fill + speckle noise for a natural look.
-function speckle(ctx, base, spots, seed = 1) {
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 16, 16);
-  let r = seed * 9301 + 49297;
-  const rnd = () => { r = (r * 9301 + 49297) % 233280; return r / 233280; };
+// ---- texture helpers ----
+function _toRGB(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function _cl(v) { return v < 0 ? 0 : v > 255 ? 255 : v | 0; }
+function _rgb(r, g, b) { return 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')'; }
+// small deterministic xorshift PRNG (one per tile, by seed)
+function _prng(seed) {
+  let r = (seed * 1973 + 9277) >>> 0 || 1;
+  return () => { r ^= r << 13; r >>>= 0; r ^= r >> 17; r ^= r << 5; r >>>= 0; return r / 4294967296; };
+}
+
+// Base + per-pixel value noise (Minecraft's grainy look), then optional accent
+// spots. `spots` is a list of [color, count]. `grain` controls noise strength.
+function speckle(ctx, base, spots, seed = 1, grain = 13) {
+  const [br, bg, bb] = _toRGB(base);
+  const rnd = _prng(seed);
+  for (let y = 0; y < 16; y++)
+    for (let x = 0; x < 16; x++) {
+      const d = (rnd() * 2 - 1) * grain;
+      ctx.fillStyle = _rgb(_cl(br + d), _cl(bg + d), _cl(bb + d));
+      ctx.fillRect(x, y, 1, 1);
+    }
   for (const [color, amount] of spots) {
     ctx.fillStyle = color;
     for (let i = 0; i < amount; i++) ctx.fillRect((rnd() * 16) | 0, (rnd() * 16) | 0, 1, 1);
   }
 }
-// Helper: scatter small blobs (for ores).
-function blobs(ctx, color, count, seed) {
-  let r = seed * 2654435761;
-  const rnd = () => { r = (r * 1103515245 + 12345) & 0x7fffffff; return (r % 1000) / 1000; };
-  ctx.fillStyle = color;
+// Ore nuggets: scattered mineral clusters with a highlight + shadow pixel for depth.
+function blobs(ctx, color, count, seed, hi, lo) {
+  const rnd = _prng(seed * 7 + 3);
+  const [r, g, b] = _toRGB(color);
+  hi = hi || _rgb(_cl(r + 55), _cl(g + 55), _cl(b + 55));
+  lo = lo || _rgb(_cl(r - 45), _cl(g - 45), _cl(b - 45));
   for (let i = 0; i < count; i++) {
-    const x = (rnd() * 13) | 0, y = (rnd() * 13) | 0;
-    ctx.fillRect(x, y, 2, 2);
-    if (rnd() > 0.5) ctx.fillRect(x + 1, y + 1, 1, 1);
+    const x = 1 + (rnd() * 12 | 0), y = 1 + (rnd() * 12 | 0);
+    ctx.fillStyle = lo; ctx.fillRect(x, y, 3, 3);
+    ctx.fillStyle = color; ctx.fillRect(x, y, 2, 2);
+    ctx.fillStyle = hi; ctx.fillRect(x, y, 1, 1);
+    if (rnd() > 0.5) { ctx.fillStyle = color; ctx.fillRect(x + 2, y + 2, 1, 1); }
   }
 }
 
-paint('grass_top', (c) => speckle(c, '#5fa83d', [['#6fbf48', 60], ['#4e8f33', 50], ['#75c850', 30]], 3));
+paint('grass_top', (c) => speckle(c, '#62a23e', [['#71b94a', 46], ['#558f35', 40], ['#7ccb52', 22], ['#4c8530', 18]], 3, 12));
 paint('grass_side', (c) => {
-  speckle(c, '#7a5a3a', [['#6b4d30', 50], ['#8a6a44', 40]], 5);
-  c.fillStyle = '#5fa83d'; c.fillRect(0, 0, 16, 4);
-  c.fillStyle = '#4e8f33';
-  for (let x = 0; x < 16; x += 2) c.fillRect(x, 3 + ((x * 7) % 2), 1, 2);
+  speckle(c, '#79573a', [['#6a4c30', 40], ['#8a6a44', 30], ['#5e4329', 20]], 5, 12);
+  // grassy top band with an irregular fringe dripping down the dirt
+  c.fillStyle = '#62a23e'; c.fillRect(0, 0, 16, 4);
+  const rnd = _prng(57);
+  for (let x = 0; x < 16; x++) {
+    c.fillStyle = (rnd() < 0.5) ? '#558f35' : '#71b94a';
+    c.fillRect(x, 0, 1, 1);
+    const drip = 3 + (rnd() * 3 | 0);
+    c.fillStyle = '#4c8530';
+    c.fillRect(x, 4, 1, drip - 3);
+  }
 });
-paint('dirt', (c) => speckle(c, '#7a5a3a', [['#6b4d30', 60], ['#8a6a44', 45], ['#5e4329', 25]], 7));
-paint('stone', (c) => speckle(c, '#888888', [['#777777', 70], ['#999999', 50], ['#6f6f6f', 25]], 11));
+paint('dirt', (c) => speckle(c, '#79573a', [['#6a4c30', 46], ['#8a6a44', 36], ['#5e4329', 22]], 7, 13));
+paint('stone', (c) => speckle(c, '#848484', [['#777777', 40], ['#949494', 34], ['#6c6c6c', 22]], 11, 11));
 paint('cobble', (c) => {
-  speckle(c, '#7c7c7c', [['#6a6a6a', 40], ['#909090', 30]], 13);
-  c.strokeStyle = '#5c5c5c'; c.lineWidth = 1;
-  c.strokeRect(0.5, 0.5, 7, 7); c.strokeRect(8.5, 4.5, 6, 6); c.strokeRect(2.5, 9.5, 6, 5);
+  speckle(c, '#7d7d7d', [['#8f8f8f', 22], ['#6c6c6c', 20]], 13, 16);
+  // dark mortar between irregular cobbles
+  c.fillStyle = '#4e4e4e';
+  c.fillRect(0, 4, 16, 1); c.fillRect(0, 10, 16, 1);
+  c.fillRect(6, 0, 1, 4); c.fillRect(11, 0, 1, 4);
+  c.fillRect(3, 5, 1, 5); c.fillRect(9, 5, 1, 5); c.fillRect(13, 5, 1, 5);
+  c.fillRect(6, 11, 1, 5); c.fillRect(11, 11, 1, 5);
+  // lit pebble tops
+  c.fillStyle = '#9c9c9c';
+  c.fillRect(1, 1, 3, 2); c.fillRect(8, 1, 2, 2); c.fillRect(12, 1, 2, 2);
+  c.fillRect(1, 6, 2, 3); c.fillRect(10, 6, 2, 3); c.fillRect(0, 11, 5, 3); c.fillRect(7, 12, 3, 3);
 });
 paint('mossy', (c) => {
-  speckle(c, '#6e7a5c', [['#5c6a4a', 40], ['#808c66', 30], ['#4a7a3a', 24]], 14);
-  c.strokeStyle = '#4a5240'; c.lineWidth = 1;
-  c.strokeRect(0.5, 0.5, 7, 7); c.strokeRect(8.5, 4.5, 6, 6);
+  speckle(c, '#71795e', [['#828c66', 22], ['#5e6a4a', 20], ['#4a7a3a', 18]], 14, 15);
+  c.fillStyle = '#454d3a';
+  c.fillRect(0, 4, 16, 1); c.fillRect(0, 10, 16, 1);
+  c.fillRect(6, 0, 1, 4); c.fillRect(11, 0, 1, 4);
+  c.fillRect(3, 5, 1, 5); c.fillRect(9, 5, 1, 5); c.fillRect(6, 11, 1, 5);
+  c.fillStyle = '#5d8a3e'; const rnd = _prng(140);   // moss patches
+  for (let i = 0; i < 26; i++) c.fillRect((rnd() * 16) | 0, (rnd() * 16) | 0, 1, 1);
 });
 paint('stonebrick', (c) => {
-  speckle(c, '#8a8a8a', [['#7a7a7a', 40], ['#9a9a9a', 30]], 15);
-  c.fillStyle = '#6a6a6a';
-  c.fillRect(0, 7, 16, 1); c.fillRect(7, 0, 1, 8); c.fillRect(3, 8, 1, 8); c.fillRect(11, 8, 1, 8);
+  speckle(c, '#828282', [['#949494', 20], ['#717171', 18]], 15, 11);
+  c.fillStyle = '#5c5c5c';                 // recessed mortar
+  c.fillRect(0, 7, 16, 1);
+  c.fillRect(8, 0, 1, 8); c.fillRect(4, 8, 1, 8); c.fillRect(12, 8, 1, 8);
+  c.fillStyle = 'rgba(255,255,255,0.07)'; // top-edge highlight on each brick
+  c.fillRect(0, 0, 16, 1); c.fillRect(0, 8, 16, 1);
 });
-paint('sand', (c) => speckle(c, '#dcd29a', [['#d0c587', 60], ['#e8dfaf', 40]], 17));
-paint('gravel', (c) => speckle(c, '#9a938c', [['#7f7872', 60], ['#b0a89f', 40], ['#6a6460', 24]], 18));
+paint('sand', (c) => speckle(c, '#dcd29a', [['#d0c587', 34], ['#e8dfaf', 28], ['#c8bd80', 16]], 17, 9));
+paint('gravel', (c) => {
+  speckle(c, '#938c85', [['#7d766f', 30], ['#b0a89f', 24]], 18, 14);
+  c.fillStyle = '#6a6460'; const rnd = _prng(181);   // dark pebbles
+  for (let i = 0; i < 7; i++) { const x = rnd() * 13 | 0, y = rnd() * 13 | 0; c.fillRect(x, y, 2, 2); }
+  c.fillStyle = '#c2bab1';
+  for (let i = 0; i < 6; i++) c.fillRect(rnd() * 15 | 0, rnd() * 15 | 0, 1, 1);
+});
 paint('wood_top', (c) => {
-  speckle(c, '#b9925b', [['#a87f49', 30]], 19);
+  speckle(c, '#b9925b', [['#a87f49', 16], ['#c69f63', 14]], 19, 9);
   c.strokeStyle = '#8a6a3f'; c.lineWidth = 1;
-  for (let r = 6; r > 0; r -= 2) { c.beginPath(); c.arc(8, 8, r, 0, 7); c.stroke(); }
+  for (let r = 2; r <= 7; r += 2) { c.beginPath(); c.arc(8, 8, r, 0, 7); c.stroke(); }
+  c.fillStyle = '#6e5230'; c.fillRect(7, 7, 2, 2);   // pith
 });
 paint('wood_side', (c) => {
-  speckle(c, '#6b4f2f', [['#5c4327', 40], ['#7c5d39', 40]], 23);
-  c.fillStyle = '#4f3a22';
-  for (let x = 2; x < 16; x += 5) c.fillRect(x, 0, 1, 16);
+  speckle(c, '#6b4f2f', [['#5c4327', 22], ['#7c5d39', 18]], 23, 9);
+  c.fillStyle = '#4f3a22'; for (let x = 1; x < 16; x += 4) c.fillRect(x, 0, 1, 16);
+  c.fillStyle = '#7e5f39'; for (let x = 3; x < 16; x += 4) c.fillRect(x, 0, 1, 16);
+  c.fillStyle = '#4a3520'; c.fillRect(5, 5, 2, 2); c.fillRect(10, 10, 2, 2);   // knots
 });
-paint('leaves', (c) => speckle(c, '#3f8f33', [['#357a2b', 90], ['#4aa53c', 70], ['#2c6624', 40]], 29));
+paint('leaves', (c) => {
+  speckle(c, '#3f8f33', [['#357a2b', 64], ['#4aa53c', 56], ['#2c6624', 40], ['#58c046', 26]], 29, 17);
+  c.fillStyle = '#214d1b'; const rnd = _prng(291);   // shadowed gaps between clusters
+  for (let i = 0; i < 12; i++) c.fillRect((rnd() * 16) | 0, (rnd() * 16) | 0, 1, 1);
+});
 paint('plank', (c) => {
-  speckle(c, '#b08a52', [['#9e7b46', 40]], 31);
-  c.fillStyle = '#8a6a3f';
-  for (let y = 0; y < 16; y += 4) c.fillRect(0, y, 16, 1);
-  c.fillRect(7, 0, 1, 4); c.fillRect(11, 4, 1, 4); c.fillRect(4, 8, 1, 4); c.fillRect(9, 12, 1, 4);
+  speckle(c, '#b08a52', [['#9e7b46', 20], ['#c49a5e', 16]], 31, 9);
+  c.fillStyle = '#8a6a3f'; for (let y = 3; y < 16; y += 4) c.fillRect(0, y, 16, 1);   // plank seams
+  c.fillStyle = '#9c7842';                 // short grain ticks
+  for (const [x, y] of [[5, 1], [11, 1], [2, 5], [9, 5], [6, 9], [13, 9], [3, 13], [10, 13]]) c.fillRect(x, y, 1, 2);
 });
-paint('water', (c) => speckle(c, '#2b6fd6', [['#2461c4', 50], ['#3a80e8', 40]], 37));
+paint('water', (c) => speckle(c, '#2b6fd6', [['#2461c4', 36], ['#3a80e8', 30], ['#1f57b4', 18]], 37, 8));
 paint('lava', (c) => {
-  speckle(c, '#e2541a', [['#ff8a2a', 50], ['#c23a10', 40], ['#ffd24a', 20]], 38);
+  speckle(c, '#e2541a', [['#ff8a2a', 40], ['#c23a10', 30]], 38, 10);
+  c.fillStyle = '#ffd24a'; const rnd = _prng(382);   // bright molten blobs
+  for (let i = 0; i < 8; i++) { const x = rnd() * 14 | 0, y = rnd() * 14 | 0; c.fillRect(x, y, 2, 2); }
 });
-paint('bedrock', (c) => speckle(c, '#3a3a3a', [['#2a2a2a', 70], ['#4a4a4a', 50], ['#1f1f1f', 30]], 41));
+paint('bedrock', (c) => speckle(c, '#3a3a3a', [['#222222', 44], ['#4c4c4c', 34], ['#171717', 24]], 41, 16));
 paint('glass', (c) => {
   c.clearRect(0, 0, 16, 16);
   c.fillStyle = 'rgba(180,220,235,0.25)'; c.fillRect(0, 0, 16, 16);
@@ -151,17 +205,17 @@ paint('glass', (c) => {
   c.beginPath(); c.moveTo(3, 3); c.lineTo(7, 7); c.stroke();
 });
 paint('brick', (c) => {
-  speckle(c, '#a44a3a', [['#933f30', 30]], 43);
-  c.fillStyle = '#d8d2c4';
+  speckle(c, '#9e463a', [['#8c3e32', 22], ['#b05446', 16]], 43, 10);
+  c.fillStyle = '#cfc7b8';                 // light mortar, running-bond
   for (let y = 0; y < 16; y += 4) c.fillRect(0, y, 16, 1);
-  for (let y = 0; y < 16; y += 8) c.fillRect(8, y, 1, 4);
-  for (let y = 4; y < 16; y += 8) { c.fillRect(4, y, 1, 4); c.fillRect(12, y, 1, 4); }
+  for (let i = 0; i < 4; i++) { const y = i * 4, off = (i % 2) ? 4 : 0; for (let x = off; x < 16; x += 8) c.fillRect(x, y, 1, 4); }
 });
-paint('snow', (c) => speckle(c, '#f2f7fb', [['#e4ecf3', 40], ['#ffffff', 40]], 47));
-paint('coal_ore', (c) => { speckle(c, '#888888', [['#777777', 50], ['#999999', 30]], 11); blobs(c, '#1c1c1c', 5, 7); });
-paint('iron_ore', (c) => { speckle(c, '#888888', [['#777777', 50], ['#999999', 30]], 11); blobs(c, '#c8a07a', 5, 9); });
-paint('gold_ore', (c) => { speckle(c, '#888888', [['#777777', 50], ['#999999', 30]], 11); blobs(c, '#f5d23a', 5, 13); });
-paint('diamond_ore', (c) => { speckle(c, '#888888', [['#777777', 50], ['#999999', 30]], 11); blobs(c, '#4fe0d8', 5, 21); });
+paint('snow', (c) => speckle(c, '#f2f7fb', [['#e4ecf3', 30], ['#ffffff', 30]], 47, 6));
+const _oreBase = (c, seed) => speckle(c, '#848484', [['#949494', 18], ['#717171', 16]], seed, 11);
+paint('coal_ore', (c) => { _oreBase(c, 11); blobs(c, '#232323', 6, 7, '#3a3a3a', '#101010'); });
+paint('iron_ore', (c) => { _oreBase(c, 11); blobs(c, '#c8a07a', 6, 9); });
+paint('gold_ore', (c) => { _oreBase(c, 11); blobs(c, '#f5d23a', 6, 13); });
+paint('diamond_ore', (c) => { _oreBase(c, 11); blobs(c, '#4fe0d8', 6, 21); });
 paint('obsidian', (c) => {
   speckle(c, '#15101f', [['#0c0814', 60], ['#241b36', 30], ['#3a2a55', 12]], 53);
 });
