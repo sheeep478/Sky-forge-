@@ -19,11 +19,15 @@ const K_NB6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -
 // ---- network state (for the current world) ----
 const kPositions = new Set();           // "x,y,z" of every kinetic block
 const kSpeed = new Map();               // "x,y,z" -> signed rotation speed
+const kFacing = new Map();               // "x,y,z" -> 'x' | 'y' | 'z' (rotation axis)
 const handCrankSpin = new Map();         // "x,y,z" -> seconds of remaining spin
 function kKey(x, y, z) { return x + ',' + y + ',' + z; }
 
 function registerKinetic(x, y, z) { kPositions.add(kKey(x, y, z)); }
-function unregisterKinetic(x, y, z) { kPositions.delete(kKey(x, y, z)); handCrankSpin.delete(kKey(x, y, z)); }
+function unregisterKinetic(x, y, z) { const k = kKey(x, y, z); kPositions.delete(k); handCrankSpin.delete(k); kFacing.delete(k); }
+function setKineticAxis(x, y, z, axis) { kFacing.set(kKey(x, y, z), axis); }
+function loadKineticFacing(arr) { if (arr) for (const [k, a] of arr) kFacing.set(k, a); }
+function clearKineticFacing() { kFacing.clear(); }
 
 // Rebuild kPositions by scanning a world's post-generation edits.
 function scanKinetics(world) {
@@ -176,81 +180,89 @@ function kineticTick(world, dim, dt) {
   }
 }
 
-// ===================== visuals (spinning overlays) =====================
-let kVisuals = new Map();                 // "x,y,z" -> { group, axis, rot, kind }
-let _kScene = null;
+// ===================== visuals (real 3D models, Create-style) =====================
+// Shafts, cogwheels, large cogwheels, water wheels and hand cranks are NOT drawn
+// in the chunk mesh (MODEL_BLOCKS); they appear purely as these models. Machines
+// (millstone/press/fan) keep their cube and add a moving part on top.
+let kVisuals = new Map();                 // "x,y,z" -> { group, spin, axis, rot, kind }
 function _mat(hex) { return new THREE.MeshLambertMaterial({ color: hex }); }
-const _MAT = {
-  metal: 0x9a9d9c, dark: 0x5f6261, brass: 0xcba74e, wood: 0x9a6a3a, stone: 0x7c7f7e,
-};
+const _MAT = { metal: 0x8b8e8d, dark: 0x55585a, light: 0xa6a9a8, brass: 0xcba74e, wood: 0x9a6a3a, woodDark: 0x6e4a28, stone: 0x6f7271 };
 
-function _gearGroup(R, thick, color) {
+// A shaft: a plus/cross-section rod along local Z (so it tiles end-to-end).
+function _shaftBars(len) {
   const g = new THREE.Group();
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.85, R * 0.85, thick, 12), _mat(color));
+  const m = _mat(_MAT.metal), d = _mat(_MAT.dark);
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, len), m));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.32, len), m));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, len + 0.01), d));   // dark core groove
+  return g;
+}
+function _shaftModel() { return _shaftBars(1.0); }
+
+// A thin toothed cogwheel in the local XY plane (spins around local Z), with a
+// shaft passing through it.
+function _cogModel(R, teeth) {
+  const g = new THREE.Group();
+  const m = _mat(_MAT.metal), d = _mat(_MAT.dark), l = _mat(_MAT.light);
+  const depth = 0.22;
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.72, R * 0.72, depth, 16), m);
   hub.rotation.x = Math.PI / 2; g.add(hub);
-  const teeth = Math.max(6, Math.round(R * 14));
-  const tg = new THREE.BoxGeometry(R * 0.32, R * 0.32, thick * 1.1), tm = _mat(color);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(R * 0.82, depth * 0.28, 6, 24), l); g.add(ring);
+  const tg = new THREE.BoxGeometry(R * 0.34, R * 0.34, depth * 1.05);
   for (let i = 0; i < teeth; i++) {
     const a = i / teeth * Math.PI * 2;
-    const t = new THREE.Mesh(tg, tm);
-    t.position.set(Math.cos(a) * R, Math.sin(a) * R, 0);
-    t.rotation.z = a; g.add(t);
+    const t = new THREE.Mesh(tg, m);
+    t.position.set(Math.cos(a) * R, Math.sin(a) * R, 0); t.rotation.z = a; g.add(t);
   }
-  return g;
-}
-function _shaftGroup() {
-  const g = new THREE.Group();
-  // a long thin rod that pokes out both ends of the block so the spin reads
-  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1.3, 8), _mat(_MAT.metal));
-  g.add(s);
-  const key = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.34), _mat(_MAT.dark));
-  g.add(key);
-  return g;
-}
-function _wheelGroup() {
-  const g = new THREE.Group();
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.09, 6, 18), _mat(_MAT.wood));
-  g.add(rim);
-  const pg = new THREE.BoxGeometry(0.16, 0.34, 0.26), pm = _mat(0x7a5230);
-  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const p = new THREE.Mesh(pg, pm); p.position.set(Math.cos(a) * 0.66, Math.sin(a) * 0.66, 0); p.rotation.z = a; g.add(p); }
-  return g;
-}
-function _fanGroup() {
-  const g = new THREE.Group();
-  const bg = new THREE.BoxGeometry(1.05, 0.14, 0.05), bm = _mat(_MAT.dark);
-  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; const b = new THREE.Mesh(bg, bm); b.rotation.z = a; g.add(b); }
-  return g;
-}
-function _crankGroup() {
-  const g = new THREE.Group();
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.1), _mat(_MAT.brass)); arm.position.x = 0.12; g.add(arm);
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.24, 6), _mat(_MAT.wood)); handle.position.set(0.34, 0, 0); g.add(handle);
-  return g;
-}
-function _millTop() {
-  const g = new THREE.Group();
-  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.16, 10), _mat(_MAT.dark)); s.position.y = 0.42; g.add(s);
+  g.add(_shaftBars(1.0));                 // shaft through the hub
   return g;
 }
 
-// Build the overlay for one kinetic block. Returns {group, axis, kind} or null.
-function _visualFor(id) {
-  if (id === BLOCK.COGWHEEL) return { group: _gearGroup(0.6, 0.34, _MAT.metal), axis: 'z', kind: 'spin' };
-  if (id === BLOCK.LARGE_COGWHEEL) return { group: _gearGroup(0.84, 0.34, _MAT.metal), axis: 'z', kind: 'spin' };
-  if (id === BLOCK.SHAFT) return { group: _shaftGroup(), axis: 'y', kind: 'spin' };
-  if (id === BLOCK.WATER_WHEEL) return { group: _wheelGroup(), axis: 'z', kind: 'spin' };
-  if (id === BLOCK.HAND_CRANK) return { group: _crankGroup(), axis: 'y', kind: 'spin' };
-  if (id === BLOCK.ENCASED_FAN) return { group: _fanGroup(), axis: 'z', kind: 'spin' };
-  if (id === BLOCK.MILLSTONE) return { group: _millTop(), axis: 'y', kind: 'spin' };
-  if (id === BLOCK.MECHANICAL_PRESS) return { group: _pressGroup(), axis: 'y', kind: 'press' };
-  return null;
-}
-function _pressGroup() {
+// A wooden water wheel (spins around local Z).
+function _wheelModel() {
   const g = new THREE.Group();
-  const ram = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.6), _mat(_MAT.brass));
-  ram.position.y = 0.3; g.add(ram);
-  g._ram = ram;
+  const R = 0.82;
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.07, 6, 22), _mat(_MAT.wood)));
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(R * 0.62, 0.05, 6, 20), _mat(_MAT.woodDark)));
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; const s = new THREE.Mesh(new THREE.BoxGeometry(R * 2, 0.1, 0.14), _mat(_MAT.woodDark)); s.rotation.z = a; g.add(s); }
+  const pg = new THREE.BoxGeometry(0.26, 0.34, 0.4);
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const p = new THREE.Mesh(pg, _mat(0x7a5230)); p.position.set(Math.cos(a) * R, Math.sin(a) * R, 0); p.rotation.z = a; g.add(p); }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.7, 8), _mat(_MAT.metal)); hub.rotation.x = Math.PI / 2; g.add(hub);
   return g;
+}
+
+// A brass hand crank on a short shaft (spins around local Z, mounted into -Z).
+function _crankModel() {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.5, 10), _mat(_MAT.metal));
+  base.rotation.x = Math.PI / 2; base.position.z = -0.18; g.add(base);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.12, 0.12), _mat(_MAT.brass)); arm.position.set(0.16, 0, 0.22); g.add(arm);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.26, 6), _mat(_MAT.wood)); handle.position.set(0.36, 0, 0.22); g.add(handle);
+  return g;
+}
+
+// Machine moving parts (added on top of the rendered cube).
+function _millTop() { const g = new THREE.Group(); const s = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.18, 12), _mat(_MAT.dark)); s.position.y = 0.42; g.add(s); return g; }
+function _fanBlades() { const g = new THREE.Group(); const bg = new THREE.BoxGeometry(0.9, 0.14, 0.05); for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; const b = new THREE.Mesh(bg, _mat(_MAT.dark)); b.rotation.z = a; g.add(b); } return g; }
+function _pressRam() { const g = new THREE.Group(); const ram = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.6), _mat(_MAT.brass)); ram.position.y = 0.32; g.add(ram); g._ram = ram; return g; }
+
+// Returns {build, oriented, axisFixed, kind} for a kinetic id, or null.
+function _modelDef(id) {
+  switch (id) {
+    case BLOCK.SHAFT: return { build: _shaftModel, oriented: true, def: 'y' };
+    case BLOCK.COGWHEEL: return { build: () => _cogModel(0.46, 8), oriented: true, def: 'z' };
+    case BLOCK.LARGE_COGWHEEL: return { build: () => _cogModel(0.66, 12), oriented: true, def: 'z' };
+    case BLOCK.WATER_WHEEL: return { build: _wheelModel, oriented: true, def: 'z' };
+    case BLOCK.HAND_CRANK: return { build: _crankModel, oriented: true, def: 'y' };
+    case BLOCK.ENCASED_FAN: return { build: _fanBlades, oriented: true, def: 'z' };
+    case BLOCK.MILLSTONE: return { build: _millTop, axisFixed: 'y' };
+    case BLOCK.MECHANICAL_PRESS: return { build: _pressRam, kind: 'press' };
+    default: return null;
+  }
+}
+function _orient(group, axis) {                 // point the model's local +Z along world `axis`
+  if (axis === 'x') group.rotation.y = Math.PI / 2;
+  else if (axis === 'y') group.rotation.x = -Math.PI / 2;
 }
 
 function clearKineticVisuals(scene) {
@@ -258,30 +270,35 @@ function clearKineticVisuals(scene) {
   kVisuals = new Map();
 }
 function rebuildKineticVisuals(world, scene) {
-  _kScene = scene;
   clearKineticVisuals(scene);
   for (const key of kPositions) {
     const p = key.split(','); const x = +p[0], y = +p[1], z = +p[2];
-    const id = world.getBlock(x, y, z);
-    const v = _visualFor(id);
-    if (!v) continue;
-    v.group.position.set(x + 0.5, y + 0.5, z + 0.5);
-    scene.add(v.group);
-    v.rot = 0; v.id = id;
-    kVisuals.set(key, v);
+    const def = _modelDef(world.getBlock(x, y, z));
+    if (!def) continue;
+    const inner = def.build();
+    let group, spin, axis;
+    if (def.oriented) {                         // model blocks: outer orients, inner spins on local Z
+      group = new THREE.Group(); group.add(inner);
+      _orient(group, kFacing.get(key) || def.def);
+      spin = inner; axis = 'z';
+    } else {                                     // machine parts: spin straight around a world axis
+      group = inner; spin = inner; axis = def.axisFixed || 'y';
+    }
+    group.position.set(x + 0.5, y + 0.5, z + 0.5);
+    scene.add(group);
+    kVisuals.set(key, { group, spin, axis, rot: 0, kind: def.kind || 'spin' });
   }
 }
 function updateKineticVisuals(dt) {
   for (const [key, v] of kVisuals) {
     const sp = kSpeed.get(key) || 0;
     if (v.kind === 'press') {
-      // ram stamps down while the press is turning, rests up otherwise
-      if (sp) { v.rot += dt * 3; v.group._ram.position.y = 0.06 + 0.22 * (0.5 + 0.5 * Math.sin(v.rot)); }
-      else v.group._ram.position.y = 0.3;
+      if (sp) { v.rot += dt * 3; v.spin._ram.position.y = 0.08 + 0.22 * (0.5 + 0.5 * Math.sin(v.rot)); }
+      else v.spin._ram.position.y = 0.32;
       continue;
     }
     if (!sp) continue;
-    v.rot += sp * dt * 0.35;
-    v.group.rotation[v.axis] = v.rot;
+    v.rot += sp * dt * 0.4;
+    v.spin.rotation[v.axis] = v.rot;
   }
 }

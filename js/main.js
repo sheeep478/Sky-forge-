@@ -181,8 +181,9 @@ function initWorld(seed, save) {
   if (endMobs) endMobs.clear();
   netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null; endWorld = null; endMobs = null;
   portalCooldown = 0; portalTimer = 0; endFightWasActive = false;
-  clearKineticVisuals(scene); machineState.clear();
+  clearKineticVisuals(scene); machineState.clear(); clearKineticFacing();
   if (save && save.machines) for (const [k, m] of save.machines) machineState.set(k, m);
+  if (save && save.kFacing) loadKineticFacing(save.kFacing);
 
   if (save) { selectedMode = save.mode; selectedWorld = save.type; cheats = !!save.cheats; peaceful = !!save.peaceful; }
   dimension = 'overworld';
@@ -1179,7 +1180,10 @@ function placeBlock() {
   world.setBlock(px, py, pz, id);
   if (selectedMode === 'survival') take(item, 1);
   maybeUpdateRedstone(world, px, py, pz);
-  if (isKinetic(id)) { registerKinetic(px, py, pz); recomputeKinetics(world); rebuildKineticVisuals(world, scene); }
+  if (isKinetic(id)) {
+    setKineticAxis(px, py, pz, hit.nx ? 'x' : hit.ny ? 'y' : 'z');   // align to the face placed against
+    registerKinetic(px, py, pz); recomputeKinetics(world); rebuildKineticVisuals(world, scene);
+  }
 }
 
 // ---- farming helpers ----
@@ -1587,6 +1591,7 @@ function saveGame() {
       aetherEdits: aetherWorld ? aetherWorld.serializeEdits() : (pendingAetherEdits || []),
       endEdits: endWorld ? endWorld.serializeEdits() : (pendingEndEdits || []),
       machines: [...machineState.entries()],
+      kFacing: [...kFacing.entries()],
     };
     localStorage.setItem(worldKey(currentWorldId), JSON.stringify(data));
     // upsert index entry

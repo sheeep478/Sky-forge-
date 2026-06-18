@@ -638,6 +638,7 @@ class World {
         for (let x = 0; x < CHUNK; x++) {
           const b = ch.blocks[this._idx(x, y, z)];
           if (b === BLOCK.AIR) continue;
+          if (MODEL_BLOCKS.has(b)) continue;   // drawn as a 3D model, not a cube
           const bInfo = BLOCK_INFO[b];
           const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL || b === BLOCK.AETHER_PORTAL || (bInfo && (bInfo.crop || bInfo.rs)));
           const wx = ox + x, wz = oz + z;

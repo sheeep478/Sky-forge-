@@ -669,12 +669,14 @@ const BLOCK_INFO = {
   // kinetics (cogs/shafts are transparent so the spinning overlay reads through)
   [BLOCK.ANDESITE_CASING]: { name: 'Andesite Casing', solid: true, color: '#8f9291' },
   [BLOCK.BRASS_CASING]: { name: 'Brass Casing', solid: true, color: '#cba74e' },
-  [BLOCK.SHAFT]: { name: 'Shaft', solid: true, color: '#8c8f8e' },
-  [BLOCK.COGWHEEL]: { name: 'Cogwheel', solid: true, color: '#9a9d9c' },
-  [BLOCK.LARGE_COGWHEEL]: { name: 'Large Cogwheel', solid: true, color: '#9a9d9c' },
+  // shaft/cog/wheel/crank are drawn as 3D models, not cubes (see MODEL_BLOCKS);
+  // transparent here only means "don't cull my neighbours' faces".
+  [BLOCK.SHAFT]: { name: 'Shaft', solid: true, transparent: true, model: true, color: '#8c8f8e' },
+  [BLOCK.COGWHEEL]: { name: 'Cogwheel', solid: true, transparent: true, model: true, color: '#9a9d9c' },
+  [BLOCK.LARGE_COGWHEEL]: { name: 'Large Cogwheel', solid: true, transparent: true, model: true, color: '#9a9d9c' },
   [BLOCK.GEARBOX]: { name: 'Gearbox', solid: true, color: '#8f9291' },
-  [BLOCK.WATER_WHEEL]: { name: 'Water Wheel', solid: true, color: '#9a6a3a' },
-  [BLOCK.HAND_CRANK]: { name: 'Hand Crank', solid: true, color: '#cba74e' },
+  [BLOCK.WATER_WHEEL]: { name: 'Water Wheel', solid: true, transparent: true, model: true, color: '#9a6a3a' },
+  [BLOCK.HAND_CRANK]: { name: 'Hand Crank', solid: true, transparent: true, model: true, color: '#cba74e' },
   [BLOCK.MILLSTONE]: { name: 'Millstone', solid: true, color: '#7c7f7e' },
   [BLOCK.MECHANICAL_PRESS]: { name: 'Mechanical Press', solid: true, color: '#8f9291' },
   [BLOCK.ENCASED_FAN]: { name: 'Encased Fan', solid: true, color: '#8f9291' },
@@ -743,6 +745,10 @@ const NEEDS_TOOL = new Set([
   BLOCK.FURNACE, BLOCK.END_STONE, BLOCK.NETHER_BRICK,
   BLOCK.END_PORTAL_FRAME, BLOCK.END_PORTAL_FRAME_EYE,
 ]);
+
+// Blocks shown as standalone 3D models (rods/gears/wheels) instead of full
+// cubes — the chunk mesher skips them and create.js renders the model.
+const MODEL_BLOCKS = new Set([BLOCK.SHAFT, BLOCK.COGWHEEL, BLOCK.LARGE_COGWHEEL, BLOCK.WATER_WHEEL, BLOCK.HAND_CRANK]);
 
 // Blocks offered in the build palette / inventory.
 const PALETTE = [
