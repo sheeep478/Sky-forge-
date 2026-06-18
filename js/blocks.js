@@ -490,7 +490,7 @@ function _frame(c, col) {   // a wooden casing frame around the sides
 }
 function _disc(c, cx, cy, r, col) { c.fillStyle = col; c.beginPath(); c.arc(cx, cy, r, 0, 7); c.fill(); }
 function _gear(c, col, dark, teeth, R) {
-  c.clearRect(0, 0, 16, 16);
+  speckle(c, '#787b7a', [['#6a6d6c', 18], ['#86898b', 14]], teeth * 7 + 3, 8);   // opaque andesite face
   for (let i = 0; i < teeth; i++) { const a = i / teeth * Math.PI * 2; const x = 8 + Math.cos(a) * (R + 1.5), y = 8 + Math.sin(a) * (R + 1.5); c.fillStyle = dark; c.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3); }
   _disc(c, 8, 8, R, col); _disc(c, 8, 8, R - 1.5, dark); _disc(c, 8, 8, R - 2.5, col); _disc(c, 8, 8, 1.6, dark);
 }
@@ -498,13 +498,13 @@ paint('andesite_casing', (c) => { speckle(c, '#8f9291', [['#7f8281', 22], ['#9da
 paint('andesite_casing_top', (c) => { speckle(c, '#8f9291', [['#7f8281', 22], ['#a1a4a3', 16]], 202, 9); c.strokeStyle = '#6f7271'; c.strokeRect(2.5, 2.5, 11, 11); c.fillStyle = '#6f7271'; c.fillRect(7, 2, 2, 2); c.fillRect(7, 12, 2, 2); });
 paint('brass_casing', (c) => { speckle(c, '#cba74e', [['#b8923e', 22], ['#dcb65c', 16]], 203, 9); _frame(c, '#9a6a3a'); });
 paint('brass_casing_top', (c) => { speckle(c, '#cba74e', [['#b8923e', 22]], 204, 9); c.strokeStyle = '#9a7a32'; c.strokeRect(2.5, 2.5, 11, 11); c.fillStyle = '#e3c870'; c.fillRect(3, 3, 3, 3); c.fillRect(10, 10, 3, 3); });
-paint('shaft_side', (c) => { c.clearRect(0, 0, 16, 16); c.fillStyle = '#8c8f8e'; c.fillRect(0, 5, 16, 6); c.fillStyle = '#a2a5a4'; c.fillRect(0, 6, 16, 1); c.fillStyle = '#6f7271'; c.fillRect(0, 10, 16, 1); c.fillStyle = '#5f6261'; for (let x = 2; x < 16; x += 4) c.fillRect(x, 5, 1, 6); });
-paint('shaft_end', (c) => { c.clearRect(0, 0, 16, 16); c.fillStyle = '#8c8f8e'; c.fillRect(5, 2, 6, 12); c.fillRect(2, 5, 12, 6); c.fillStyle = '#6f7271'; c.fillRect(6, 6, 4, 4); c.fillStyle = '#5f6261'; c.fillRect(7, 7, 2, 2); });
+paint('shaft_side', (c) => { speckle(c, '#74777a', [['#65686c', 16]], 230, 8); c.fillStyle = '#8c8f8e'; c.fillRect(0, 5, 16, 6); c.fillStyle = '#a2a5a4'; c.fillRect(0, 6, 16, 1); c.fillStyle = '#6f7271'; c.fillRect(0, 10, 16, 1); c.fillStyle = '#5f6261'; for (let x = 2; x < 16; x += 4) c.fillRect(x, 5, 1, 6); });
+paint('shaft_end', (c) => { speckle(c, '#74777a', [['#65686c', 16]], 231, 8); c.fillStyle = '#8c8f8e'; c.fillRect(5, 2, 6, 12); c.fillRect(2, 5, 12, 6); c.fillStyle = '#6f7271'; c.fillRect(6, 6, 4, 4); c.fillStyle = '#5f6261'; c.fillRect(7, 7, 2, 2); });
 paint('cog', (c) => _gear(c, '#9a9d9c', '#5f6261', 8, 5));
 paint('cog_large', (c) => _gear(c, '#9a9d9c', '#565958', 12, 6.5));
 paint('gearbox', (c) => { speckle(c, '#8f9291', [['#7f8281', 20]], 212, 9); _frame(c, '#5f6261'); _disc(c, 8, 8, 4, '#74787a'); _disc(c, 8, 8, 1.6, '#565958'); });
 paint('water_wheel', (c) => { speckle(c, '#9a6a3a', [['#86592a', 26], ['#a8773c', 18]], 205, 10); c.strokeStyle = '#5c3d1c'; c.lineWidth = 2; c.beginPath(); c.arc(8, 8, 7, 0, 7); c.stroke(); c.fillStyle = '#5c3d1c'; c.fillRect(7, 0, 2, 16); c.fillRect(0, 7, 16, 2); _disc(c, 8, 8, 2, '#8c8f8e'); });
-paint('hand_crank', (c) => { c.clearRect(0, 0, 16, 16); c.fillStyle = '#8c8f8e'; c.fillRect(7, 6, 2, 8); c.fillStyle = '#cba74e'; c.fillRect(3, 6, 9, 3); c.fillStyle = '#9a6a3a'; c.fillRect(2, 5, 3, 5); });
+paint('hand_crank', (c) => { speckle(c, '#8f9291', [['#7f8281', 18]], 232, 8); c.fillStyle = '#8c8f8e'; c.fillRect(7, 6, 2, 8); c.fillStyle = '#cba74e'; c.fillRect(3, 6, 9, 3); c.fillStyle = '#9a6a3a'; c.fillRect(2, 5, 3, 5); });
 paint('millstone_top', (c) => { speckle(c, '#8f9291', [['#7f8281', 22]], 206, 9); _disc(c, 8, 8, 5, '#5f6261'); _disc(c, 8, 8, 2, '#787c7e'); });
 paint('millstone_side', (c) => { speckle(c, '#7c7f7e', [['#6e7170', 22]], 207, 9); c.fillStyle = '#5f6261'; c.fillRect(0, 4, 16, 1); c.fillRect(0, 11, 16, 1); c.fillStyle = '#9a6a3a'; c.fillRect(0, 12, 16, 4); });
 paint('press_top', (c) => { speckle(c, '#8f9291', [['#7f8281', 20]], 209, 9); c.strokeStyle = '#6f7271'; c.strokeRect(2.5, 2.5, 11, 11); });
@@ -669,12 +669,12 @@ const BLOCK_INFO = {
   // kinetics (cogs/shafts are transparent so the spinning overlay reads through)
   [BLOCK.ANDESITE_CASING]: { name: 'Andesite Casing', solid: true, color: '#8f9291' },
   [BLOCK.BRASS_CASING]: { name: 'Brass Casing', solid: true, color: '#cba74e' },
-  [BLOCK.SHAFT]: { name: 'Shaft', solid: true, transparent: true, color: '#8c8f8e' },
-  [BLOCK.COGWHEEL]: { name: 'Cogwheel', solid: true, transparent: true, color: '#9a9d9c' },
-  [BLOCK.LARGE_COGWHEEL]: { name: 'Large Cogwheel', solid: true, transparent: true, color: '#9a9d9c' },
+  [BLOCK.SHAFT]: { name: 'Shaft', solid: true, color: '#8c8f8e' },
+  [BLOCK.COGWHEEL]: { name: 'Cogwheel', solid: true, color: '#9a9d9c' },
+  [BLOCK.LARGE_COGWHEEL]: { name: 'Large Cogwheel', solid: true, color: '#9a9d9c' },
   [BLOCK.GEARBOX]: { name: 'Gearbox', solid: true, color: '#8f9291' },
-  [BLOCK.WATER_WHEEL]: { name: 'Water Wheel', solid: true, transparent: true, color: '#9a6a3a' },
-  [BLOCK.HAND_CRANK]: { name: 'Hand Crank', solid: true, transparent: true, color: '#cba74e' },
+  [BLOCK.WATER_WHEEL]: { name: 'Water Wheel', solid: true, color: '#9a6a3a' },
+  [BLOCK.HAND_CRANK]: { name: 'Hand Crank', solid: true, color: '#cba74e' },
   [BLOCK.MILLSTONE]: { name: 'Millstone', solid: true, color: '#7c7f7e' },
   [BLOCK.MECHANICAL_PRESS]: { name: 'Mechanical Press', solid: true, color: '#8f9291' },
   [BLOCK.ENCASED_FAN]: { name: 'Encased Fan', solid: true, color: '#8f9291' },

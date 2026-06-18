@@ -200,21 +200,24 @@ function _gearGroup(R, thick, color) {
 }
 function _shaftGroup() {
   const g = new THREE.Group();
-  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.02, 8), _mat(_MAT.metal));
+  // a long thin rod that pokes out both ends of the block so the spin reads
+  const s = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1.3, 8), _mat(_MAT.metal));
   g.add(s);
+  const key = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.34), _mat(_MAT.dark));
+  g.add(key);
   return g;
 }
 function _wheelGroup() {
   const g = new THREE.Group();
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.07, 6, 16), _mat(_MAT.wood));
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.09, 6, 18), _mat(_MAT.wood));
   g.add(rim);
-  const pg = new THREE.BoxGeometry(0.12, 0.5, 0.18), pm = _mat(0x7a5230);
-  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const p = new THREE.Mesh(pg, pm); p.position.set(Math.cos(a) * 0.34, Math.sin(a) * 0.34, 0); p.rotation.z = a; g.add(p); }
+  const pg = new THREE.BoxGeometry(0.16, 0.34, 0.26), pm = _mat(0x7a5230);
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const p = new THREE.Mesh(pg, pm); p.position.set(Math.cos(a) * 0.66, Math.sin(a) * 0.66, 0); p.rotation.z = a; g.add(p); }
   return g;
 }
 function _fanGroup() {
   const g = new THREE.Group();
-  const bg = new THREE.BoxGeometry(0.7, 0.12, 0.04), bm = _mat(_MAT.dark);
+  const bg = new THREE.BoxGeometry(1.05, 0.14, 0.05), bm = _mat(_MAT.dark);
   for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; const b = new THREE.Mesh(bg, bm); b.rotation.z = a; g.add(b); }
   return g;
 }
@@ -232,8 +235,8 @@ function _millTop() {
 
 // Build the overlay for one kinetic block. Returns {group, axis, kind} or null.
 function _visualFor(id) {
-  if (id === BLOCK.COGWHEEL) return { group: _gearGroup(0.42, 0.16, _MAT.metal), axis: 'z', kind: 'spin' };
-  if (id === BLOCK.LARGE_COGWHEEL) return { group: _gearGroup(0.62, 0.16, _MAT.metal), axis: 'z', kind: 'spin' };
+  if (id === BLOCK.COGWHEEL) return { group: _gearGroup(0.6, 0.34, _MAT.metal), axis: 'z', kind: 'spin' };
+  if (id === BLOCK.LARGE_COGWHEEL) return { group: _gearGroup(0.84, 0.34, _MAT.metal), axis: 'z', kind: 'spin' };
   if (id === BLOCK.SHAFT) return { group: _shaftGroup(), axis: 'y', kind: 'spin' };
   if (id === BLOCK.WATER_WHEEL) return { group: _wheelGroup(), axis: 'z', kind: 'spin' };
   if (id === BLOCK.HAND_CRANK) return { group: _crankGroup(), axis: 'y', kind: 'spin' };
