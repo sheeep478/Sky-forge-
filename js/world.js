@@ -12,7 +12,26 @@ const SEA_LEVEL = 24;
 // created with and always regenerate using it, so changing generation never
 // shifts the terrain under existing builds. BUMP this when generation changes,
 // and branch on `this.genVersion` instead of editing an existing version path.
-const GEN_VERSION = 1;
+// v2 adds nether fortresses, strongholds (with the End portal room), and the End.
+const GEN_VERSION = 2;
+
+// The End's obsidian pillars (fixed, deterministic) so terrain generation and
+// the boss-fight code agree on where the end crystals sit.
+const END_BASE = 40;             // island surface level
+const END_PILLARS = (() => {
+  const list = [];
+  const N = 8, ring = 33;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    list.push({
+      x: Math.round(Math.cos(a) * ring),
+      z: Math.round(Math.sin(a) * ring),
+      h: 4 + (i % 4) * 2,                  // pillar height above the island (reachable by pillaring up)
+      r: 2 + (i % 3 === 0 ? 1 : 0),        // pillar radius
+    });
+  }
+  return list;
+})();
 
 // Six face directions, each tagged with a face code (py/ny/px/nx/pz/nz).
 const DIRS = [
@@ -123,7 +142,33 @@ class World {
     if (this.type === 'aether') return this._genAether(cx, cz, ch);
     if (this.type === 'woolworld') return this._genWool(cx, cz, ch);
     if (this.type === 'sandbox') return this._genSandbox(ch);
+    if (this.type === 'end') return this._genEnd(cx, cz, ch);
     return this._genRegular(cx, cz, ch);   // 'regular' and 'simple'
+  }
+
+  // The End: a central end-stone island floating in the void, ringed by tall
+  // obsidian pillars (each topped with an end crystal placed by the boss code).
+  _genEnd(cx, cz, ch) {
+    const BASE = END_BASE;
+    for (let x = 0; x < CHUNK; x++)
+      for (let z = 0; z < CHUNK; z++) {
+        const wx = cx * CHUNK + x, wz = cz * CHUNK + z;
+        const d = Math.hypot(wx, wz);
+        // main island: a low dome ~84 blocks across
+        if (d < 42) {
+          const top = BASE + Math.floor(Math.max(0, 7 - d * 0.18));
+          const depth = 5 + Math.floor(Math.max(0, 9 - d * 0.2));
+          for (let y = top - depth; y <= top; y++) if (y >= 0 && y < HEIGHT) this._set(ch, x, y, z, BLOCK.END_STONE);
+        }
+        // obsidian pillars topped with bedrock (crystal base)
+        for (const p of END_PILLARS) {
+          if (Math.abs(wx - p.x) > p.r || Math.abs(wz - p.z) > p.r) continue;
+          if (Math.hypot(wx - p.x, wz - p.z) > p.r + 0.4) continue;
+          const ptop = BASE + p.h;
+          for (let y = BASE - 2; y <= ptop; y++) if (y >= 0 && y < HEIGHT) this._set(ch, x, y, z, BLOCK.OBSIDIAN);
+          if (wx === p.x && wz === p.z) this._set(ch, x, ptop, z, BLOCK.BEDROCK);   // crystal stands here
+        }
+      }
   }
 
   // 333: a flat sandstone testing world (no mobs)
@@ -274,6 +319,75 @@ class World {
     // structures (one decision per chunk, kept within bounds)
     if (rnd() < 0.04) this._ruin(ch, cx, cz, 4 + (rnd() * 7 | 0), 4 + (rnd() * 7 | 0), rnd);
     if (rnd() < 0.06) this._dungeon(ch, cx, cz, 4 + (rnd() * 7 | 0), 4 + (rnd() * 7 | 0), 8 + (rnd() * 18 | 0), rnd);
+    if (this.genVersion >= 2) this._maybeStronghold(cx, cz, ch);
+  }
+
+  // Deterministic stronghold anchors (3 in a ring around origin). Shared with
+  // the eye-of-ender locator so thrown eyes point to a real portal room.
+  strongholds() {
+    if (this.type !== 'regular' && this.type !== 'simple') return [];
+    if (this.genVersion < 2) return [];
+    if (this._strongholdCache) return this._strongholdCache;
+    const r = mulberry32((this.seed ^ 0x5deece6d) >>> 0);
+    const list = [];
+    const ring = 96 + Math.floor(r() * 64);          // 96..160 blocks from spawn
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + (r() - 0.5) * 0.8;
+      list.push({ x: Math.round(Math.cos(a) * ring), z: Math.round(Math.sin(a) * ring) });
+    }
+    this._strongholdCache = list;
+    return list;
+  }
+
+  _maybeStronghold(cx, cz, ch) {
+    for (const s of this.strongholds()) {
+      if (Math.floor(s.x / CHUNK) !== cx || Math.floor(s.z / CHUNK) !== cz) continue;
+      let lx = s.x - cx * CHUNK, lz = s.z - cz * CHUNK;
+      lx = Math.max(3, Math.min(CHUNK - 4, lx));     // keep the room inside this chunk
+      lz = Math.max(3, Math.min(CHUNK - 4, lz));
+      this._portalRoom(ch, cx, cz, lx, lz);
+    }
+  }
+
+  // The stronghold's End-portal room: a stone-brick chamber with 12 empty
+  // End-portal frames ringing a 3x3 centre, a loot chest, and a shaft to dig down.
+  _portalRoom(ch, cx, cz, lx, lz) {
+    const surf = this._localSurface(ch, lx, lz);
+    let fy = Math.min((surf < 0 ? SEA_LEVEL : surf) - 9, SEA_LEVEL - 6);
+    if (fy < 8) fy = 8;
+    for (let dx = -3; dx <= 3; dx++)
+      for (let dz = -3; dz <= 3; dz++) {
+        this._set(ch, lx + dx, fy - 1, lz + dz, BLOCK.STONE_BRICK);         // floor
+        for (let dy = 0; dy <= 4; dy++) {
+          const wall = Math.abs(dx) === 3 || Math.abs(dz) === 3 || dy === 4;
+          this._set(ch, lx + dx, fy + dy, lz + dz, wall ? BLOCK.STONE_BRICK : BLOCK.AIR);
+        }
+      }
+    // 12 End-portal frames around the central 3x3 (corners stay open)
+    for (let d = -1; d <= 1; d++) {
+      this._set(ch, lx - 2, fy, lz + d, BLOCK.END_PORTAL_FRAME);
+      this._set(ch, lx + 2, fy, lz + d, BLOCK.END_PORTAL_FRAME);
+      this._set(ch, lx + d, fy, lz - 2, BLOCK.END_PORTAL_FRAME);
+      this._set(ch, lx + d, fy, lz + 2, BLOCK.END_PORTAL_FRAME);
+    }
+    // loot chest in a corner of the chamber
+    this._set(ch, lx - 2, fy, lz - 2, BLOCK.CHEST);
+    this.lootChests.push({ x: cx * CHUNK + lx - 2, y: fy, z: cz * CHUNK + lz - 2, items: this._strongholdLoot() });
+    // a 1x1 shaft straight up so the player can drop in once they dig the top block
+    const topY = surf < 0 ? HEIGHT - 1 : surf;
+    this._set(ch, lx, fy + 4, lz, BLOCK.AIR);
+    for (let y = fy + 5; y < topY; y++) this._set(ch, lx, y, lz, BLOCK.AIR);
+  }
+
+  _strongholdLoot() {
+    const r = mulberry32((this.seed ^ 0x1d872b41) >>> 0);
+    const items = {};
+    const pool = [[ITEM.ENDER_PEARL, 2], [ITEM.IRON_INGOT, 3], [ITEM.GOLD_INGOT, 2],
+      [ITEM.DIAMOND, 1], [ITEM.BREAD, 3], [BLOCK.OBSIDIAN, 2]];
+    const n = 3 + (r() * 3 | 0);
+    for (let i = 0; i < n; i++) { const [id, max] = pool[(r() * pool.length) | 0]; items[id] = (items[id] || 0) + (1 + (r() * max | 0)); }
+    items[ITEM.ENDER_PEARL] = (items[ITEM.ENDER_PEARL] || 0) + 1 + (r() * 2 | 0);   // always a couple of pearls
+    return items;
   }
 
   // top solid block height within this chunk at local (lx,lz)
@@ -404,6 +518,32 @@ class World {
         }
       }
     }
+    // nether-brick fortress segment (with a blaze-rod loot chest)
+    if (this.genVersion >= 2 && rnd() < 0.05) this._fortress(ch, cx, cz, rnd);
+  }
+
+  // A raised nether-brick walkway with corner pillars and a loot chest. Blazes
+  // are spawned near it by the game when the player is close.
+  _fortress(ch, cx, cz, rnd) {
+    const lx = 4 + (rnd() * 6 | 0), lz = 4 + (rnd() * 6 | 0), fy = 28;
+    for (let dx = -3; dx <= 3; dx++)
+      for (let dz = -3; dz <= 3; dz++) {
+        this._set(ch, lx + dx, fy, lz + dz, BLOCK.NETHER_BRICK);            // floor
+        if (Math.abs(dx) === 3 || Math.abs(dz) === 3) this._set(ch, lx + dx, fy + 1, lz + dz, BLOCK.NETHER_BRICK);  // rail
+      }
+    for (const [px, pz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]])
+      for (let h = 1; h <= 3; h++) this._set(ch, lx + px, fy + h, lz + pz, BLOCK.NETHER_BRICK);   // pillars
+    this._set(ch, lx, fy + 1, lz, BLOCK.CHEST);
+    this.lootChests.push({ x: cx * CHUNK + lx, y: fy + 1, z: cz * CHUNK + lz, items: this._fortressLoot(rnd) });
+  }
+
+  _fortressLoot(rnd) {
+    const items = {};
+    const pool = [[ITEM.BLAZE_ROD, 2], [ITEM.GOLD_INGOT, 3], [ITEM.IRON_INGOT, 2], [ITEM.DIAMOND, 1]];
+    const n = 2 + (rnd() * 3 | 0);
+    for (let i = 0; i < n; i++) { const [id, max] = pool[(rnd() * pool.length) | 0]; items[id] = (items[id] || 0) + (1 + (rnd() * max | 0)); }
+    items[ITEM.BLAZE_ROD] = (items[ITEM.BLAZE_ROD] || 0) + 1 + (rnd() * 2 | 0);   // guarantee blaze rods
+    return items;
   }
 
   // ---- dimension visibility (overworld <-> nether) ----

@@ -21,6 +21,8 @@ const ITEM = {
   I_HELM: 170, I_CHEST: 171, I_LEGS: 172, I_BOOTS: 173,
   // buckets + sheep
   BUCKET: 180, WATER_BUCKET: 181, LAVA_BUCKET: 182, MUTTON: 183,
+  // The End progression
+  ENDER_PEARL: 190, BLAZE_ROD: 191, BLAZE_POWDER: 192, EYE_OF_ENDER: 193,
 };
 
 // Tool stats: matching a block's preferred tool multiplies mining speed.
@@ -96,6 +98,8 @@ const ITEM_INFO = {
   [ITEM.I_LEGS]: { name: 'Iron Leggings' }, [ITEM.I_BOOTS]: { name: 'Iron Boots' },
   [ITEM.BUCKET]: { name: 'Bucket' }, [ITEM.WATER_BUCKET]: { name: 'Water Bucket' },
   [ITEM.LAVA_BUCKET]: { name: 'Lava Bucket' }, [ITEM.MUTTON]: { name: 'Mutton' },
+  [ITEM.ENDER_PEARL]: { name: 'Ender Pearl' }, [ITEM.BLAZE_ROD]: { name: 'Blaze Rod' },
+  [ITEM.BLAZE_POWDER]: { name: 'Blaze Powder' }, [ITEM.EYE_OF_ENDER]: { name: 'Eye of Ender' },
 };
 
 function isBlockItem(id) { return id < 100; }
@@ -137,6 +141,8 @@ const RECIPES = [
   { out: ITEM.BUCKET, n: 1, rows: ['I.I', '.I.'], key: { I: ITEM.IRON_INGOT } },
   { out: BLOCK.STONE_BRICK, n: 4, rows: ['TT', 'TT'], key: { T: BLOCK.STONE } },
   { out: ITEM.BREAD, n: 1, rows: ['WWW'], key: { W: ITEM.WHEAT } },
+  { out: ITEM.BLAZE_POWDER, n: 2, shapeless: [ITEM.BLAZE_ROD] },
+  { out: ITEM.EYE_OF_ENDER, n: 1, shapeless: [ITEM.ENDER_PEARL, ITEM.BLAZE_POWDER] },
   tool(ITEM.W_PICK, BLOCK.PLANK, 'pick'), tool(ITEM.W_AXE, BLOCK.PLANK, 'axe'),
   tool(ITEM.W_SHOVEL, BLOCK.PLANK, 'shovel'), tool(ITEM.W_SWORD, BLOCK.PLANK, 'sword'), tool(ITEM.W_HOE, BLOCK.PLANK, 'hoe'),
   tool(ITEM.S_PICK, BLOCK.COBBLE, 'pick'), tool(ITEM.S_AXE, BLOCK.COBBLE, 'axe'),
@@ -255,6 +261,7 @@ function blockDrop(blockId, toolItem) {
     case BLOCK.BUTTON_ON: return { id: BLOCK.BUTTON, n: 1 };
     case BLOCK.REDSTONE_TORCH_OFF: return { id: BLOCK.REDSTONE_TORCH, n: 1 };
     case BLOCK.REPEATER_ON: return { id: BLOCK.REPEATER, n: 1 };
+    case BLOCK.END_PORTAL_FRAME_EYE: return { id: BLOCK.END_PORTAL_FRAME, n: 1 };
     case BLOCK.PISTON_HEAD: return null;
     case BLOCK.SNOW: return { id: BLOCK.SNOW, n: 1 };
     default: return { id: blockId, n: 1 };
@@ -338,6 +345,26 @@ function buildItemIcons() {
   _itemIcons[ITEM.WATER_BUCKET] = bucket('#2b6fd6');
   _itemIcons[ITEM.LAVA_BUCKET] = bucket('#e2731a');
   _itemIcons[ITEM.MUTTON] = _icon((x) => { x.fillStyle = '#d98793'; x.fillRect(8, 11, 16, 11); x.fillStyle = '#fff'; x.fillRect(19, 13, 4, 4); });
+
+  _itemIcons[ITEM.ENDER_PEARL] = _icon((x) => {
+    x.fillStyle = '#0f3a30'; x.beginPath(); x.arc(16, 16, 10, 0, 7); x.fill();
+    x.fillStyle = '#1f6f59'; x.beginPath(); x.arc(16, 16, 7, 0, 7); x.fill();
+    x.fillStyle = '#bff0dd'; x.fillRect(12, 11, 3, 3);
+  });
+  _itemIcons[ITEM.BLAZE_ROD] = _icon((x) => {
+    x.fillStyle = '#f2a52a'; x.save(); x.translate(16, 16); x.rotate(0.7); x.fillRect(-2, -12, 5, 24); x.restore();
+    x.fillStyle = '#ffe07a'; x.save(); x.translate(16, 16); x.rotate(0.7); x.fillRect(-1, -10, 2, 20); x.restore();
+  });
+  _itemIcons[ITEM.BLAZE_POWDER] = _icon((x) => {
+    x.fillStyle = '#e87a18'; for (const [px, py] of [[10, 12], [16, 16], [20, 11], [13, 19], [18, 20]]) x.fillRect(px, py, 3, 3);
+    x.fillStyle = '#ffd23a'; x.fillRect(15, 14, 2, 2);
+  });
+  _itemIcons[ITEM.EYE_OF_ENDER] = _icon((x) => {
+    x.fillStyle = '#2a6f1e'; x.beginPath(); x.arc(16, 16, 10, 0, 7); x.fill();
+    x.fillStyle = '#0a1c14'; x.beginPath(); x.arc(16, 16, 6, 0, 7); x.fill();
+    x.fillStyle = '#37c79a'; x.fillRect(13, 13, 6, 6);
+    x.fillStyle = '#cffaea'; x.fillRect(14, 14, 2, 2);
+  });
 }
 function itemIcon(id) {
   if (isBlockItem(id)) return blockIcon(id);

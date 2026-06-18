@@ -76,12 +76,13 @@ const input = { mx: 0, mz: 0, jump: false, sprint: false, up: false, down: false
 // survival stats
 let health = 20, hunger = 20, hungerTimer = 0, regenTimer = 0, lavaTimer = 0;
 
-// dimensions (overworld <-> nether / aether)
+// dimensions (overworld <-> nether / aether / end)
 let gameSeed = 0, dimension = 'overworld';
-let overworld = null, netherWorld = null, aetherWorld = null;
-let overworldMobs = null, netherMobs = null, aetherMobs = null;
+let overworld = null, netherWorld = null, aetherWorld = null, endWorld = null;
+let overworldMobs = null, netherMobs = null, aetherMobs = null, endMobs = null;
 let portalCooldown = 0, portalTimer = 0, returnPos = null;
-let pendingNetherEdits = null, pendingAetherEdits = null;
+let pendingNetherEdits = null, pendingAetherEdits = null, pendingEndEdits = null;
+let endDragonDefeated = false, endFightWasActive = false, netherSpawnTimer = 0;
 let cheats = false;            // "sv cheats 1" seed: all items + the Aether
 let peaceful = false;          // beta: no hostile mobs spawn, no hunger loss
 let saveTimer = 0;
@@ -156,8 +157,15 @@ function ensureAether() {
   aetherMobs = new MobManager(aetherWorld, scene);
   if (pendingAetherEdits) { aetherWorld.loadEdits(pendingAetherEdits); pendingAetherEdits = null; }
 }
-function worldFor(dim) { return dim === 'nether' ? netherWorld : dim === 'aether' ? aetherWorld : overworld; }
-function mobsFor(dim) { return dim === 'nether' ? netherMobs : dim === 'aether' ? aetherMobs : overworldMobs; }
+function ensureEnd() {
+  if (endWorld) return;
+  endWorld = new World(scene, (gameSeed ^ 0x1a2b3c4d) >>> 0, 'end', overworld ? overworld.genVersion : undefined);
+  if (isTouch) endWorld.renderDistance = 3;
+  endMobs = new MobManager(endWorld, scene);
+  if (pendingEndEdits) { endWorld.loadEdits(pendingEndEdits); pendingEndEdits = null; }
+}
+function worldFor(dim) { return dim === 'nether' ? netherWorld : dim === 'aether' ? aetherWorld : dim === 'end' ? endWorld : overworld; }
+function mobsFor(dim) { return dim === 'nether' ? netherMobs : dim === 'aether' ? aetherMobs : dim === 'end' ? endMobs : overworldMobs; }
 
 function initWorld(seed, save) {
   if (!renderer) setupRenderer();
@@ -166,17 +174,21 @@ function initWorld(seed, save) {
   if (overworld) overworld.hide();
   if (netherWorld) netherWorld.hide();
   if (aetherWorld) aetherWorld.hide();
+  if (endWorld) endWorld.hide();
   if (overworldMobs) overworldMobs.clear();
   if (netherMobs) netherMobs.clear();
   if (aetherMobs) aetherMobs.clear();
-  netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null;
-  portalCooldown = 0; portalTimer = 0;
+  if (endMobs) endMobs.clear();
+  netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null; endWorld = null; endMobs = null;
+  portalCooldown = 0; portalTimer = 0; endFightWasActive = false;
 
   if (save) { selectedMode = save.mode; selectedWorld = save.type; cheats = !!save.cheats; peaceful = !!save.peaceful; }
   dimension = 'overworld';
+  endDragonDefeated = save ? !!save.endDragonDefeated : false;
   returnPos = save && save.returnPos ? save.returnPos : null;
   pendingNetherEdits = save && save.netherEdits && save.netherEdits.length ? save.netherEdits : null;
   pendingAetherEdits = save && save.aetherEdits && save.aetherEdits.length ? save.aetherEdits : null;
+  pendingEndEdits = save && save.endEdits && save.endEdits.length ? save.endEdits : null;
 
   scene.clear();
   gameSeed = save ? (save.seed >>> 0) : (seed >>> 0);
@@ -237,6 +249,11 @@ function initWorld(seed, save) {
       ensureAether();
       world = aetherWorld; mobs = aetherMobs; dimension = 'aether'; player.world = world;
       world.preload(player.pos.x, player.pos.z);
+    } else if (save.dimension === 'end') {
+      ensureEnd();
+      world = endWorld; mobs = endMobs; dimension = 'end'; player.world = world;
+      world.preload(player.pos.x, player.pos.z);
+      if (!endDragonDefeated) { endMobs.startEndFight(); endFightWasActive = true; }
     } else {
       world.preload(player.pos.x, player.pos.z);
     }
@@ -281,7 +298,7 @@ function initWorld(seed, save) {
   hudEl.classList.remove('hidden');
   $('mode-indicator').textContent =
     (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' +
-    (dimension === 'nether' ? 'nether' : selectedWorld);
+    (dimension === 'overworld' ? selectedWorld : dimension);
   $('stats').style.display = selectedMode === 'survival' ? 'flex' : 'none';
   setDimensionVisuals();
 
@@ -343,7 +360,7 @@ function lerpColor(a, b, t) {
 
 function updateDayNight(dt) {
   timeOfDay = (timeOfDay + dt / DAY_LENGTH) % 1;
-  if (dimension === 'nether' || dimension === 'aether') { world.dayUniform.value = 1.0; return; }
+  if (dimension === 'nether' || dimension === 'aether' || dimension === 'end') { world.dayUniform.value = 1.0; return; }
   const b = skyBrightness();
   world.dayUniform.value = b;
   ambient.intensity = 0.35 + 0.45 * b;
@@ -371,6 +388,9 @@ function setDimensionVisuals() {
   } else if (dimension === 'aether') {
     scene.background = new THREE.Color(0xdff0ff);
     scene.fog = new THREE.Fog(0xdff0ff, CHUNK * 3, CHUNK * (isTouch ? 3.6 : 4.6));
+  } else if (dimension === 'end') {
+    scene.background = new THREE.Color(0x0b0613);
+    scene.fog = new THREE.Fog(0x0b0613, CHUNK * 2.6, CHUNK * (isTouch ? 3.4 : 4.6));
   } else {
     scene.background = new THREE.Color(0x8fc7ee);
     scene.fog = new THREE.Fog(0x8fc7ee, CHUNK * 2.5, CHUNK * (isTouch ? 3.2 : 4.2));
@@ -388,6 +408,7 @@ const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD, ITEM.W_
 // extra non-block items shown in creative
 const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, BLOCK.SAPLING, BLOCK.TALL_GRASS, ITEM.BREAD,
   ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET,
+  ITEM.ENDER_PEARL, ITEM.BLAZE_ROD, ITEM.BLAZE_POWDER, ITEM.EYE_OF_ENDER,
   ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
   ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
 let furnaceOpen = false;
@@ -422,7 +443,8 @@ function setupInventory() {
 function giveEverything(equipArmor) {
   const misc = [ITEM.STICK, ITEM.COAL, ITEM.DIAMOND, ITEM.IRON_INGOT, ITEM.GOLD_INGOT,
     ITEM.LEATHER, ITEM.WHEAT, ITEM.WHEAT_SEEDS, ITEM.BREAD, ITEM.PORKCHOP, ITEM.CHICKEN,
-    ITEM.MUTTON, ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET, BLOCK.SAPLING, BLOCK.TALL_GRASS];
+    ITEM.MUTTON, ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET, BLOCK.SAPLING, BLOCK.TALL_GRASS,
+    ITEM.ENDER_PEARL, ITEM.BLAZE_ROD, ITEM.BLAZE_POWDER, ITEM.EYE_OF_ENDER];
   for (const id of PALETTE) inventory[id] = 64;
   for (const [id] of WOOL_COLORS) inventory[id] = 64;              // every wool colour
   for (const id of ALL_TOOLS) inventory[id] = 1;
@@ -498,6 +520,7 @@ function selectHotbar(i) {
   if (!hotbarItems.length) return;
   hotbarIndex = (i + hotbarItems.length) % hotbarItems.length;
   buildHotbarDOM();
+  if (running && activeItem() === ITEM.EYE_OF_ENDER && dimension === 'overworld') locateStronghold();
 }
 
 // ---- inventory + crafting panel (pause screen) ----
@@ -767,6 +790,7 @@ function setupInput() {
     if (e.code === 'KeyE') { if (settingsOpen) closeSettings(); else if (furnaceOpen) closeFurnace(); else if (chestOpen) closeChest(); else togglePause(); }  // inventory
     if (e.code === 'KeyF') player && player.toggleFly();
     if (e.code === 'KeyG') ignitePortal();
+    if (e.code === 'KeyT') locateStronghold();
     if (e.code.startsWith('Digit')) {
       const n = +e.code.slice(5);
       if (n >= 1 && n <= hotbarItems.length) selectHotbar(n - 1);
@@ -965,7 +989,8 @@ function onBreakPress() {
   // melee first if we're aiming at a mob
   const t = TOOLS[activeItem()];
   const dmg = (t && t.attack) || 1;
-  const drops = mobs.attack(player.getEyePos(), player.getDirection(), 3.2, dmg);
+  const reach = dimension === 'end' ? 6 : 3.2;     // longer reach to pick off End Crystals
+  const drops = mobs.attack(player.getEyePos(), player.getDirection(), reach, dmg);
   if (drops) { if (selectedMode === 'survival') for (const d of drops) give(d.id, d.n); return; }
   if (selectedMode === 'creative') { mineInstant(); return; }
   miningActive = true;            // survival: hold to break (handled in loop)
@@ -1073,6 +1098,13 @@ function placeBlock() {
       if (selectedMode === 'survival') take(BLOCK.SAPLING, 1);
       flash('Planted sapling');
     }
+    return;
+  }
+  // eye of ender: set into an empty End-portal frame, activating it once all 12 are filled
+  if (item === ITEM.EYE_OF_ENDER && hit.block === BLOCK.END_PORTAL_FRAME) {
+    world.setBlock(hit.x, hit.y, hit.z, BLOCK.END_PORTAL_FRAME_EYE);
+    if (selectedMode === 'survival') take(ITEM.EYE_OF_ENDER, 1);
+    if (!tryActivateEndPortal(hit.x, hit.y, hit.z)) flash('Eye of Ender set into the frame');
     return;
   }
   // seeds: plant on farmland (dry or wet)
@@ -1332,6 +1364,112 @@ function teleport(target) {
     (dimension === 'overworld' ? selectedWorld : dimension);
 }
 
+// ---- The End: travel + boss arena ----
+function enterEnd() {
+  returnPos = { x: player.pos.x, y: player.pos.y, z: player.pos.z };
+  world.hide(); mobs.hide();
+  ensureEnd();
+  dimension = 'end'; world = endWorld; mobs = endMobs; player.world = world;
+  // arrive on the island (near the +Z rim) with a small obsidian safety platform
+  const ax = 0, az = 40;
+  world.preload(ax + 0.5, az + 0.5);
+  const py = world.surfaceY(ax, az);
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++)
+    if (world.getBlock(ax + dx, py - 1, az + dz) === BLOCK.AIR) world.setBlock(ax + dx, py - 1, az + dz, BLOCK.OBSIDIAN, false);
+  world.remeshArea(ax - 2, ax + 2, az - 2, az + 2);
+  player.pos.set(ax + 0.5, py + 0.1, az + 0.5); player.vel.set(0, 0, 0);
+  if (endDragonDefeated) { buildEndExitPortal(); flash('The End is still. Step into the portal to return home.'); }
+  else { mobs.startEndFight(); endFightWasActive = true; flash('Destroy the End Crystals, then slay the Ender Dragon!'); }
+  world.show(); mobs.show(); setDimensionVisuals();
+  portalCooldown = 2.5; portalTimer = 0;
+  updateModeLabel();
+}
+function exitEnd() {
+  world.hide(); mobs.hide();
+  dimension = 'overworld'; world = overworld; mobs = overworldMobs; player.world = world;
+  if (returnPos) player.pos.set(returnPos.x, returnPos.y, returnPos.z);
+  player.vel.set(0, 0, 0);
+  world.show(); mobs.show(); setDimensionVisuals();
+  portalCooldown = 2.5; portalTimer = 0;
+  updateModeLabel();
+}
+function updateModeLabel() {
+  $('mode-indicator').textContent =
+    (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' +
+    (dimension === 'overworld' ? selectedWorld : dimension);
+}
+// once the dragon is slain: bedrock fountain with the exit portal + the dragon egg
+function buildEndExitPortal() {
+  const w = world, cx = 0, cz = 0, yt = END_BASE + 7;
+  w.preload(cx + 0.5, cz + 0.5);
+  for (let dx = -2; dx <= 2; dx++)
+    for (let dz = -2; dz <= 2; dz++) {
+      const inner = Math.abs(dx) <= 1 && Math.abs(dz) <= 1;
+      w.setBlock(cx + dx, yt, cz + dz, inner ? BLOCK.END_PORTAL : BLOCK.BEDROCK, false);
+    }
+  w.setBlock(cx, yt, cz, BLOCK.BEDROCK, false);            // central pillar base
+  w.setBlock(cx, yt + 1, cz, BLOCK.DRAGON_EGG, false);     // the prize
+  w.remeshArea(cx - 3, cx + 3, cz - 3, cz + 3);
+}
+function onDragonDefeated() {
+  endDragonDefeated = true; endFightWasActive = false;
+  buildEndExitPortal();
+  flash('The Ender Dragon is slain! A portal home opens at the centre.');
+  saveGame();
+}
+function updateBossBar() {
+  const bar = $('boss-bar'); if (!bar) return;
+  const d = dimension === 'end' ? mobs.dragon : null;
+  if (!d) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  const fill = $('boss-fill'); if (fill) fill.style.width = Math.max(0, Math.min(100, d.hp / d.maxhp * 100)) + '%';
+  const label = $('boss-label');
+  if (label) {
+    const c = mobs.crystalsAlive();
+    label.textContent = c > 0 ? '🐉 Ender Dragon — ' + c + ' crystal' + (c > 1 ? 's' : '') + ' shielding it' : '🐉 Ender Dragon — vulnerable!';
+  }
+}
+
+// ---- End-portal frame activation (stronghold) ----
+function isEyedFrame(x, y, z) { return world.getBlock(x, y, z) === BLOCK.END_PORTAL_FRAME_EYE; }
+function endFramesComplete(cx, fy, cz) {
+  for (let d = -1; d <= 1; d++) {
+    if (!isEyedFrame(cx - 2, fy, cz + d)) return false;
+    if (!isEyedFrame(cx + 2, fy, cz + d)) return false;
+    if (!isEyedFrame(cx + d, fy, cz - 2)) return false;
+    if (!isEyedFrame(cx + d, fy, cz + 2)) return false;
+  }
+  return true;
+}
+function tryActivateEndPortal(fx, fy, fz) {
+  // the true centre lies within 2 blocks of any frame — scan the neighbourhood
+  for (let cxo = -2; cxo <= 2; cxo++)
+    for (let czo = -2; czo <= 2; czo++) {
+      const cx = fx + cxo, cz = fz + czo;
+      if (!endFramesComplete(cx, fy, cz)) continue;
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++)
+        world.setBlock(cx + dx, fy, cz + dz, BLOCK.END_PORTAL, false);
+      world.remeshArea(cx - 2, cx + 2, cz - 2, cz + 2);
+      flash('The End portal awakens! Step in to reach the End.');
+      return true;
+    }
+  return false;
+}
+
+// ---- eye-of-ender stronghold locator ----
+function compassDir(dx, dz) {
+  const a = ((Math.atan2(dx, -dz) * 180 / Math.PI) % 360 + 360) % 360;   // 0=N, 90=E
+  return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(a / 45) % 8];
+}
+function locateStronghold() {
+  if (dimension !== 'overworld') { flash('Eyes of Ender only point true in the overworld'); return; }
+  const list = overworld.strongholds ? overworld.strongholds() : [];
+  if (!list.length) { flash('No strongholds in this world'); return; }
+  let best = null, bd = Infinity;
+  for (const s of list) { const d = Math.hypot(s.x - player.pos.x, s.z - player.pos.z); if (d < bd) { bd = d; best = s; } }
+  flash('Stronghold: ' + compassDir(best.x - player.pos.x, best.z - player.pos.z) + ' · ' + Math.round(bd) + 'm');
+}
+
 // transient on-screen message
 let flashTimer = null;
 function flash(msg) {
@@ -1387,7 +1525,7 @@ function saveGame() {
       v: 2, id: currentWorldId, name: currentWorldName,
       seed: gameSeed, type: selectedWorld, mode: selectedMode,
       genVersion: overworld ? overworld.genVersion : 1,
-      cheats, peaceful, dimension, timeOfDay,
+      cheats, peaceful, dimension, timeOfDay, endDragonDefeated,
       player: {
         x: player.pos.x, y: player.pos.y, z: player.pos.z,
         yaw: player.yaw, pitch: player.pitch, health, hunger,
@@ -1400,6 +1538,7 @@ function saveGame() {
       overworldEdits: overworld ? overworld.serializeEdits() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
       aetherEdits: aetherWorld ? aetherWorld.serializeEdits() : (pendingAetherEdits || []),
+      endEdits: endWorld ? endWorld.serializeEdits() : (pendingEndEdits || []),
     };
     localStorage.setItem(worldKey(currentWorldId), JSON.stringify(data));
     // upsert index entry
@@ -1648,10 +1787,14 @@ function loop(now) {
   const pf2 = world.getBlock(fx, Math.floor(player.pos.y + 1), fz);
   const onNether = pf === BLOCK.PORTAL || pf2 === BLOCK.PORTAL;
   const onAether = pf === BLOCK.AETHER_PORTAL || pf2 === BLOCK.AETHER_PORTAL;
-  if ((onNether || onAether) && portalCooldown <= 0) {
+  const onEnd = pf === BLOCK.END_PORTAL || pf2 === BLOCK.END_PORTAL;
+  if ((onNether || onAether || onEnd) && portalCooldown <= 0) {
     portalTimer += dt;
-    if (portalTimer > 1.0) teleport(onAether ? 'aether' : 'nether');
-  } else if (!onNether && !onAether) {
+    if (portalTimer > 1.0) {
+      if (onEnd) { dimension === 'end' ? exitEnd() : enterEnd(); }
+      else teleport(onAether ? 'aether' : 'nether');
+    }
+  } else if (!onNether && !onAether && !onEnd) {
     portalTimer = 0;
   }
 
@@ -1681,16 +1824,36 @@ function loop(now) {
       const cap = isTouch ? 5 : 9;
       if (spawnTimer <= 0 && mobs.hostiles.length < cap) {
         mobs.spawnHostiles(player.pos.x, player.pos.z, 2);
+        if (Math.random() < 0.22) mobs.spawnEnderman(player.pos.x, player.pos.z, 1);   // rare night enderman
         spawnTimer = 4 + Math.random() * 4;
       }
     } else if (mobs.hostiles.length) {
       mobs.clearHostiles();      // daylight clears the undead
     }
   }
+  // nether: blazes patrol (drop blaze rods for eyes of ender)
+  if (dimension === 'nether') {
+    netherSpawnTimer -= dt;
+    if (netherSpawnTimer <= 0 && mobs.hostiles.length < (isTouch ? 4 : 7)) {
+      mobs.spawnBlazes(player.pos.x, player.pos.z, 2);
+      netherSpawnTimer = 7 + Math.random() * 5;
+    }
+  }
+  // end: endermen roam the island
+  if (dimension === 'end' && !endFightWasActive) {
+    netherSpawnTimer -= dt;
+    if (netherSpawnTimer <= 0 && mobs.hostiles.length < (isTouch ? 3 : 5)) {
+      mobs.spawnEnderman(player.pos.x, player.pos.z, 1);
+      netherSpawnTimer = 6 + Math.random() * 6;
+    }
+  }
 
   world.update(player.pos.x, player.pos.z);
   drainLootChests();
   const contact = mobs.update(dt, player.pos);
+  // boss bar + dragon-death detection
+  updateBossBar();
+  if (dimension === 'end' && endFightWasActive && !mobs.dragon && !endDragonDefeated) onDragonDefeated();
   hurtCD -= dt;
   if (selectedMode === 'survival' && contact > 0 && hurtCD <= 0) {
     health = Math.max(0, health - reduceDamage(contact)); updateStats(); hurtCD = 0.5;
@@ -1712,6 +1875,10 @@ function respawn() {
     player.pos.set(0.5, sy, 0.5);
   } else if (dimension === 'aether') {
     player.pos.set(Math.floor(player.pos.x) + 0.5, 52, Math.floor(player.pos.z) + 0.5);
+  } else if (dimension === 'end') {
+    world.preload(0.5, 40.5);
+    const sy = world.surfaceY(0, 40);
+    player.pos.set(0.5, sy + 0.1, 40.5);
   } else {
     let sx = 0.5, sz = 0.5;
     if (selectedWorld === 'skyblock') { sx = 8.5; sz = 8.5; }
