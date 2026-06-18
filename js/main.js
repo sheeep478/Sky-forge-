@@ -181,6 +181,8 @@ function initWorld(seed, save) {
   if (endMobs) endMobs.clear();
   netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null; endWorld = null; endMobs = null;
   portalCooldown = 0; portalTimer = 0; endFightWasActive = false;
+  clearKineticVisuals(scene); machineState.clear();
+  if (save && save.machines) for (const [k, m] of save.machines) machineState.set(k, m);
 
   if (save) { selectedMode = save.mode; selectedWorld = save.type; cheats = !!save.cheats; peaceful = !!save.peaceful; }
   dimension = 'overworld';
@@ -301,6 +303,7 @@ function initWorld(seed, save) {
     (dimension === 'overworld' ? selectedWorld : dimension);
   $('stats').style.display = selectedMode === 'survival' ? 'flex' : 'none';
   setDimensionVisuals();
+  refreshKinetics();
 
   if (isTouch) {
     touchEl.classList.remove('hidden');
@@ -397,6 +400,15 @@ function setDimensionVisuals() {
   }
 }
 
+// Re-scan + repower the kinetic network for the world we're currently in, and
+// rebuild the spinning overlays. Call whenever the active world changes.
+function refreshKinetics() {
+  clearKineticVisuals(scene);
+  scanKinetics(world);
+  recomputeKinetics(world);
+  rebuildKineticVisuals(world, scene);
+}
+
 // ---------------- inventory + items ----------------
 const inventory = {};        // itemId -> count (Infinity in creative)
 let hotbarItems = [];        // itemIds shown on the hotbar
@@ -409,6 +421,8 @@ const ALL_TOOLS = [ITEM.W_PICK, ITEM.W_AXE, ITEM.W_SHOVEL, ITEM.W_SWORD, ITEM.W_
 const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, BLOCK.SAPLING, BLOCK.TALL_GRASS, ITEM.BREAD,
   ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET,
   ITEM.ENDER_PEARL, ITEM.BLAZE_ROD, ITEM.BLAZE_POWDER, ITEM.EYE_OF_ENDER,
+  ITEM.ANDESITE_ALLOY, ITEM.BRASS_INGOT, ITEM.IRON_SHEET, ITEM.BRASS_SHEET,
+  ITEM.CRUSHED_IRON, ITEM.CRUSHED_GOLD, ITEM.WHEAT_FLOUR, ITEM.DOUGH,
   ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
   ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
 let furnaceOpen = false;
@@ -444,7 +458,9 @@ function giveEverything(equipArmor) {
   const misc = [ITEM.STICK, ITEM.COAL, ITEM.DIAMOND, ITEM.IRON_INGOT, ITEM.GOLD_INGOT,
     ITEM.LEATHER, ITEM.WHEAT, ITEM.WHEAT_SEEDS, ITEM.BREAD, ITEM.PORKCHOP, ITEM.CHICKEN,
     ITEM.MUTTON, ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET, BLOCK.SAPLING, BLOCK.TALL_GRASS,
-    ITEM.ENDER_PEARL, ITEM.BLAZE_ROD, ITEM.BLAZE_POWDER, ITEM.EYE_OF_ENDER];
+    ITEM.ENDER_PEARL, ITEM.BLAZE_ROD, ITEM.BLAZE_POWDER, ITEM.EYE_OF_ENDER,
+    ITEM.ANDESITE_ALLOY, ITEM.BRASS_INGOT, ITEM.IRON_SHEET, ITEM.BRASS_SHEET,
+    ITEM.CRUSHED_IRON, ITEM.CRUSHED_GOLD, ITEM.WHEAT_FLOUR, ITEM.DOUGH];
   for (const id of PALETTE) inventory[id] = 64;
   for (const [id] of WOOL_COLORS) inventory[id] = 64;              // every wool colour
   for (const id of ALL_TOOLS) inventory[id] = 1;
@@ -999,6 +1015,12 @@ function onBreakRelease() {
   miningActive = false; miningTarget = null; miningProgress = 0;
   showMining(-1);
 }
+// Detach a kinetic block when removed: dump machine contents (to inventory if
+// collect), then drop it from the network and refresh power + spinning visuals.
+function clearKineticAt(x, y, z, block, collect) {
+  if (isMachine(block)) { const drops = machineDump(dimension, x, y, z); if (collect) for (const d of drops) give(d.id, d.n); }
+  if (isKinetic(block)) { unregisterKinetic(x, y, z); recomputeKinetics(world); rebuildKineticVisuals(world, scene); }
+}
 function mineInstant() {
   const hit = raycast();
   if (!hit || BLOCK_INFO[hit.block].unbreakable) return;
@@ -1006,6 +1028,7 @@ function mineInstant() {
   if (hit.block === BLOCK.SAPLING) removeSapling(hit.x, hit.y, hit.z);
   else if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
+  if (isKinetic(hit.block)) clearKineticAt(hit.x, hit.y, hit.z, hit.block, false);
   rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z); rsCompSub.delete(hit.x + ',' + hit.y + ',' + hit.z);
   maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
 }
@@ -1021,6 +1044,7 @@ function doBreakSurvival(hit) {
   if (drop) give(drop.id, drop.n);
   // leaves occasionally yield a sapling
   if (hit.block === BLOCK.LEAVES && Math.random() < 0.1) give(BLOCK.SAPLING, 1);
+  if (isKinetic(hit.block)) clearKineticAt(hit.x, hit.y, hit.z, hit.block, true);
   rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z); rsCompSub.delete(hit.x + ',' + hit.y + ',' + hit.z);
   maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
 }
@@ -1076,6 +1100,25 @@ function placeBlock() {
     if (rsCompSub.has(k)) rsCompSub.delete(k); else rsCompSub.add(k);
     flash(rsCompSub.has(k) ? 'Comparator: subtract' : 'Comparator: compare');
     updateRedstone(world, hit.x, hit.y, hit.z);
+    return;
+  }
+  // Create: hand crank — give it a spin
+  if (hit.block === BLOCK.HAND_CRANK) {
+    handCrankSpin.set(kKey(hit.x, hit.y, hit.z), 8);
+    recomputeKinetics(world);
+    flash('Cranking…');
+    return;
+  }
+  // Create: machines — insert a valid input, or collect finished output
+  if (isMachine(hit.block)) {
+    if (item && !isTool(item) && machineInsert(world, dimension, hit.x, hit.y, hit.z, hit.block, item)) {
+      if (selectedMode === 'survival') take(item, 1);
+      flash('Loaded ' + itemName(item));
+    } else {
+      const out = machineCollect(dimension, hit.x, hit.y, hit.z);
+      if (out) { give(out.id, out.n); flash('Collected ' + out.n + '× ' + itemName(out.id)); }
+      else flash(itemName(hit.block) + (kSpeed.get(kKey(hit.x, hit.y, hit.z)) ? ' is running' : ' needs rotation'));
+    }
     return;
   }
   // hoe: till grass/dirt into farmland (wet if near water)
@@ -1136,6 +1179,7 @@ function placeBlock() {
   world.setBlock(px, py, pz, id);
   if (selectedMode === 'survival') take(item, 1);
   maybeUpdateRedstone(world, px, py, pz);
+  if (isKinetic(id)) { registerKinetic(px, py, pz); recomputeKinetics(world); rebuildKineticVisuals(world, scene); }
 }
 
 // ---- farming helpers ----
@@ -1358,6 +1402,7 @@ function teleport(target) {
   player.vel.set(0, 0, 0);
   world.show(); mobs.show();
   setDimensionVisuals();
+  refreshKinetics();
   portalCooldown = 2.2; portalTimer = 0;
   $('mode-indicator').textContent =
     (selectedMode === 'creative' ? 'Creative' : 'Survival') + ' · ' +
@@ -1381,6 +1426,7 @@ function enterEnd() {
   if (endDragonDefeated) { buildEndExitPortal(); flash('The End is still. Step into the portal to return home.'); }
   else { mobs.startEndFight(); endFightWasActive = true; flash('Destroy the End Crystals, then slay the Ender Dragon!'); }
   world.show(); mobs.show(); setDimensionVisuals();
+  refreshKinetics();
   portalCooldown = 2.5; portalTimer = 0;
   updateModeLabel();
 }
@@ -1390,6 +1436,7 @@ function exitEnd() {
   if (returnPos) player.pos.set(returnPos.x, returnPos.y, returnPos.z);
   player.vel.set(0, 0, 0);
   world.show(); mobs.show(); setDimensionVisuals();
+  refreshKinetics();
   portalCooldown = 2.5; portalTimer = 0;
   updateModeLabel();
 }
@@ -1539,6 +1586,7 @@ function saveGame() {
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
       aetherEdits: aetherWorld ? aetherWorld.serializeEdits() : (pendingAetherEdits || []),
       endEdits: endWorld ? endWorld.serializeEdits() : (pendingEndEdits || []),
+      machines: [...machineState.entries()],
     };
     localStorage.setItem(worldKey(currentWorldId), JSON.stringify(data));
     // upsert index entry
@@ -1816,6 +1864,9 @@ function loop(now) {
       }
     }
   }
+
+  // Create kinetics: run machines + spin the cogs/wheels
+  if (kPositions.size) { kineticTick(world, dimension, dt); updateKineticVisuals(dt); }
 
   // hostile mobs spawn at night in the overworld; burn off at dawn
   if (dimension === 'overworld' && !peaceful && selectedWorld !== 'sandbox' && selectedWorld !== 'woolworld') {

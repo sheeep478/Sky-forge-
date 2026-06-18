@@ -23,6 +23,9 @@ const ITEM = {
   BUCKET: 180, WATER_BUCKET: 181, LAVA_BUCKET: 182, MUTTON: 183,
   // The End progression
   ENDER_PEARL: 190, BLAZE_ROD: 191, BLAZE_POWDER: 192, EYE_OF_ENDER: 193,
+  // Create-style materials + processing products
+  ANDESITE_ALLOY: 200, BRASS_INGOT: 201, IRON_SHEET: 202, BRASS_SHEET: 203,
+  CRUSHED_IRON: 204, CRUSHED_GOLD: 205, WHEAT_FLOUR: 206, DOUGH: 207,
 };
 
 // Tool stats: matching a block's preferred tool multiplies mining speed.
@@ -100,6 +103,10 @@ const ITEM_INFO = {
   [ITEM.LAVA_BUCKET]: { name: 'Lava Bucket' }, [ITEM.MUTTON]: { name: 'Mutton' },
   [ITEM.ENDER_PEARL]: { name: 'Ender Pearl' }, [ITEM.BLAZE_ROD]: { name: 'Blaze Rod' },
   [ITEM.BLAZE_POWDER]: { name: 'Blaze Powder' }, [ITEM.EYE_OF_ENDER]: { name: 'Eye of Ender' },
+  [ITEM.ANDESITE_ALLOY]: { name: 'Andesite Alloy' }, [ITEM.BRASS_INGOT]: { name: 'Brass Ingot' },
+  [ITEM.IRON_SHEET]: { name: 'Iron Sheet' }, [ITEM.BRASS_SHEET]: { name: 'Brass Sheet' },
+  [ITEM.CRUSHED_IRON]: { name: 'Crushed Iron Ore' }, [ITEM.CRUSHED_GOLD]: { name: 'Crushed Gold Ore' },
+  [ITEM.WHEAT_FLOUR]: { name: 'Wheat Flour' }, [ITEM.DOUGH]: { name: 'Dough' },
 };
 
 function isBlockItem(id) { return id < 100; }
@@ -143,6 +150,22 @@ const RECIPES = [
   { out: ITEM.BREAD, n: 1, rows: ['WWW'], key: { W: ITEM.WHEAT } },
   { out: ITEM.BLAZE_POWDER, n: 2, shapeless: [ITEM.BLAZE_ROD] },
   { out: ITEM.EYE_OF_ENDER, n: 1, shapeless: [ITEM.ENDER_PEARL, ITEM.BLAZE_POWDER] },
+  // ---- Create: materials ----
+  { out: ITEM.ANDESITE_ALLOY, n: 1, shapeless: [BLOCK.STONE, ITEM.IRON_INGOT] },
+  { out: ITEM.BRASS_INGOT, n: 2, shapeless: [ITEM.GOLD_INGOT, ITEM.IRON_INGOT] },
+  { out: ITEM.DOUGH, n: 1, shapeless: [ITEM.WHEAT_FLOUR, ITEM.WATER_BUCKET] },
+  // ---- Create: kinetic components ----
+  { out: BLOCK.SHAFT, n: 2, rows: ['A', 'A'], key: { A: ITEM.ANDESITE_ALLOY } },
+  { out: BLOCK.COGWHEEL, n: 1, shapeless: [BLOCK.SHAFT, BLOCK.PLANK] },
+  { out: BLOCK.LARGE_COGWHEEL, n: 1, shapeless: [BLOCK.SHAFT, BLOCK.PLANK, BLOCK.PLANK] },
+  { out: BLOCK.ANDESITE_CASING, n: 1, shapeless: [ITEM.ANDESITE_ALLOY, BLOCK.PLANK] },
+  { out: BLOCK.BRASS_CASING, n: 1, shapeless: [ITEM.BRASS_INGOT, BLOCK.PLANK] },
+  { out: BLOCK.GEARBOX, n: 1, shapeless: [BLOCK.ANDESITE_CASING, BLOCK.COGWHEEL] },
+  { out: BLOCK.HAND_CRANK, n: 1, shapeless: [BLOCK.SHAFT, BLOCK.COBBLE] },
+  { out: BLOCK.WATER_WHEEL, n: 1, rows: ['PPP', 'PSP', 'PPP'], key: { P: BLOCK.PLANK, S: BLOCK.SHAFT } },
+  { out: BLOCK.MILLSTONE, n: 1, rows: ['CCC', 'CGC', 'CCC'], key: { C: BLOCK.COBBLE, G: BLOCK.COGWHEEL } },
+  { out: BLOCK.MECHANICAL_PRESS, n: 1, rows: ['I', 'G', 'A'], key: { I: ITEM.IRON_INGOT, G: BLOCK.COGWHEEL, A: BLOCK.ANDESITE_CASING } },
+  { out: BLOCK.ENCASED_FAN, n: 1, shapeless: [BLOCK.ANDESITE_CASING, BLOCK.SHAFT] },
   tool(ITEM.W_PICK, BLOCK.PLANK, 'pick'), tool(ITEM.W_AXE, BLOCK.PLANK, 'axe'),
   tool(ITEM.W_SHOVEL, BLOCK.PLANK, 'shovel'), tool(ITEM.W_SWORD, BLOCK.PLANK, 'sword'), tool(ITEM.W_HOE, BLOCK.PLANK, 'hoe'),
   tool(ITEM.S_PICK, BLOCK.COBBLE, 'pick'), tool(ITEM.S_AXE, BLOCK.COBBLE, 'axe'),
@@ -365,6 +388,18 @@ function buildItemIcons() {
     x.fillStyle = '#37c79a'; x.fillRect(13, 13, 6, 6);
     x.fillStyle = '#cffaea'; x.fillRect(14, 14, 2, 2);
   });
+
+  // ---- Create materials ----
+  _itemIcons[ITEM.ANDESITE_ALLOY] = _icon((x) => { x.fillStyle = '#8f9291'; x.fillRect(7, 6, 18, 18); x.fillStyle = '#6f7271'; x.fillRect(7, 6, 18, 3); x.fillStyle = '#a8abaa'; x.fillRect(10, 10, 4, 4); });
+  _itemIcons[ITEM.BRASS_INGOT] = _icon((x) => bar(x, '#cba74e', '#ecd279'));
+  const sheet = (x, col, hi) => { x.fillStyle = col; x.fillRect(6, 8, 20, 14); x.fillStyle = hi; x.fillRect(6, 8, 20, 2); for (let i = 10; i < 26; i += 4) { x.fillStyle = 'rgba(0,0,0,0.15)'; x.fillRect(i, 9, 1, 12); } };
+  _itemIcons[ITEM.IRON_SHEET] = _icon((x) => sheet(x, '#d0d0d0', '#f2f2f2'));
+  _itemIcons[ITEM.BRASS_SHEET] = _icon((x) => sheet(x, '#cba74e', '#ecd279'));
+  const crushed = (x, col) => { x.fillStyle = col; for (const [px, py] of [[8, 10], [15, 8], [20, 13], [11, 18], [18, 19], [22, 9]]) { x.fillRect(px, py, 4, 4); x.fillStyle = 'rgba(255,255,255,0.3)'; x.fillRect(px, py, 2, 2); x.fillStyle = col; } };
+  _itemIcons[ITEM.CRUSHED_IRON] = _icon((x) => crushed(x, '#c8a07a'));
+  _itemIcons[ITEM.CRUSHED_GOLD] = _icon((x) => crushed(x, '#f5d23a'));
+  _itemIcons[ITEM.WHEAT_FLOUR] = _icon((x) => { x.fillStyle = '#efe8d6'; x.beginPath(); x.moveTo(8, 24); x.lineTo(24, 24); x.lineTo(20, 12); x.lineTo(12, 12); x.closePath(); x.fill(); x.fillStyle = '#fff'; x.fillRect(13, 14, 3, 3); });
+  _itemIcons[ITEM.DOUGH] = _icon((x) => { x.fillStyle = '#e8d8a8'; x.beginPath(); x.arc(16, 17, 9, 0, 7); x.fill(); x.fillStyle = '#d6c48e'; x.fillRect(11, 14, 3, 2); x.fillRect(18, 18, 3, 2); });
 }
 function itemIcon(id) {
   if (isBlockItem(id)) return blockIcon(id);
