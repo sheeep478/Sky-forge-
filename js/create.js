@@ -7,7 +7,7 @@
 // whenever the network reaching them is turning.
 
 // ---- block classification ----
-const K_SOURCE = new Set([BLOCK.WATER_WHEEL, BLOCK.HAND_CRANK]);
+const K_SOURCE = new Set([BLOCK.WATER_WHEEL, BLOCK.HAND_CRANK, BLOCK.CREATIVE_MOTOR]);
 const K_MACHINE = new Set([BLOCK.MILLSTONE, BLOCK.MECHANICAL_PRESS, BLOCK.ENCASED_FAN]);
 const K_TRANSMIT = new Set([BLOCK.SHAFT, BLOCK.COGWHEEL, BLOCK.LARGE_COGWHEEL, BLOCK.GEARBOX]);
 const K_ALL = new Set([...K_SOURCE, ...K_MACHINE, ...K_TRANSMIT]);
@@ -50,7 +50,8 @@ function recomputeKinetics(world) {
     const x = +p[0], y = +p[1], z = +p[2];
     const id = world.getBlock(x, y, z);
     let s = 0;
-    if (id === BLOCK.WATER_WHEEL && _waterAdjacent(world, x, y, z)) s = 8;
+    if (id === BLOCK.CREATIVE_MOTOR) s = 16;                                    // always-on creative source
+    else if (id === BLOCK.WATER_WHEEL && _waterAdjacent(world, x, y, z)) s = 8;
     else if (id === BLOCK.HAND_CRANK && (handCrankSpin.get(key) || 0) > 0) s = 16;
     if (s) { kSpeed.set(key, s); queue.push(key); }
   }
@@ -254,6 +255,7 @@ function _modelDef(id) {
     case BLOCK.LARGE_COGWHEEL: return { build: () => _cogModel(0.66, 12), oriented: true, def: 'z' };
     case BLOCK.WATER_WHEEL: return { build: _wheelModel, oriented: true, def: 'z' };
     case BLOCK.HAND_CRANK: return { build: _crankModel, oriented: true, def: 'y' };
+    case BLOCK.CREATIVE_MOTOR: return { build: () => _shaftBars(1.7), oriented: true, def: 'y' };  // output shaft pokes out
     case BLOCK.ENCASED_FAN: return { build: _fanBlades, oriented: true, def: 'z' };
     case BLOCK.MILLSTONE: return { build: _millTop, axisFixed: 'y' };
     case BLOCK.MECHANICAL_PRESS: return { build: _pressRam, kind: 'press' };

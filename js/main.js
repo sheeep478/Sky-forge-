@@ -531,6 +531,17 @@ function buildHotbarDOM() {
   });
   const s = hb.children[hotbarIndex];
   if (s) hb.scrollLeft = s.offsetLeft - hb.clientWidth / 2 + s.clientWidth / 2;
+  updateItemName();
+}
+
+// the big centered label above the hotbar showing what you're holding
+function updateItemName() {
+  const el = $('item-name');
+  if (!el) return;
+  const id = hotbarItems.length ? hotbarItems[hotbarIndex] : null;
+  if (id == null) { el.classList.add('hidden'); return; }
+  el.textContent = itemName(id);
+  el.classList.remove('hidden');
 }
 
 function selectHotbar(i) {
