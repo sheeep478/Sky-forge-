@@ -9,3 +9,8 @@ build/
 .env
 .venv/
 venv/
+
+# Game runtime artifacts
+.gd_cache/
+gd_save.json
+screens/

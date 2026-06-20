@@ -1,43 +1,32 @@
-# ── Display ──────────────────────────────────────────────────────────────────
+"""Global constants for the Geometry Dash recreation."""
+
+# ── Display ───────────────────────────────────────────────────────────────────
 WIDTH  = 1280
 HEIGHT = 720
 FPS    = 60
-TITLE  = "PyMine"
+TITLE  = "Cube Dash"
 
-# ── Block rendering ───────────────────────────────────────────────────────────
-BLOCK_SIZE = 32          # pixels per block
+# ── World / grid ──────────────────────────────────────────────────────────────
+TILE       = 40                 # pixels per grid cell
+GROUND_Y   = HEIGHT - 140       # y of the top of the floor
+CUBE_SIZE  = TILE               # the player cube is one tile
 
-# ── World ─────────────────────────────────────────────────────────────────────
-WORLD_WIDTH  = 512       # blocks
-WORLD_HEIGHT = 256       # blocks
-SEA_LEVEL    = 96        # y-coordinate of sea/surface reference
-
-# ── Physics ───────────────────────────────────────────────────────────────────
-GRAVITY           = 0.55   # blocks/frame² (scaled by BLOCK_SIZE)
-JUMP_POWER        = 12.0   # blocks/s upward impulse
-WALK_SPEED        = 5.0    # blocks/s
-FLY_SPEED         = 8.0    # blocks/s (creative)
-TERMINAL_VELOCITY = 18.0   # blocks/s max downward
-
-# ── Survival stats ────────────────────────────────────────────────────────────
-MAX_HEALTH   = 20
-MAX_HUNGER   = 20
-HUNGER_TICK  = 1200     # frames between hunger drain
-FALL_SAFE    = 3        # blocks of free-fall before damage starts
-
-# ── Hotbar ────────────────────────────────────────────────────────────────────
-HOTBAR_SLOTS = 9
+# ── Physics (pixels / frame at 60fps) ─────────────────────────────────────────
+BASE_SPEED        = 6.4         # horizontal scroll speed (scaled per level)
+GRAVITY           = 0.86
+JUMP_VELOCITY     = -12.8
+TERMINAL_VELOCITY = 22.0
+ROT_SPEED         = 8.5         # degrees/frame the cube spins while airborne
 
 # ── Colors ────────────────────────────────────────────────────────────────────
-SKY_COLOR   = (135, 206, 235)
-WHITE       = (255, 255, 255)
-BLACK       = (0,   0,   0  )
-DARK_GRAY   = (40,  40,  40 )
-GRAY        = (120, 120, 120)
-RED         = (220, 50,  50 )
-GREEN       = (60,  180, 60 )
-YELLOW      = (240, 210, 40 )
-UI_BG       = (30,  30,  30 )
-UI_BORDER   = (80,  80,  80 )
-HEALTH_RED  = (200, 40,  40 )
-HUNGER_GOLD = (200, 160, 40 )
+WHITE      = (255, 255, 255)
+BLACK      = (0,   0,   0  )
+GRAY       = (130, 130, 140)
+DARK       = (24,  24,  34 )
+LIGHT_GRAY = (200, 200, 210)
+UI_BG      = (28,  28,  40 )
+UI_BORDER  = (90,  90,  120)
+ACCENT     = (90,  200, 255)
+GOOD       = (70,  200, 110)
+BAD        = (220, 70,  90 )
+GOLD       = (245, 205, 70 )
