@@ -181,7 +181,7 @@ function initWorld(seed, save) {
   if (endMobs) endMobs.clear();
   netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null; endWorld = null; endMobs = null;
   portalCooldown = 0; portalTimer = 0; endFightWasActive = false;
-  clearKineticVisuals(scene); machineState.clear(); clearKineticFacing();
+  clearKineticVisuals(scene); machineState.clear(); clearKineticFacing(); placeGhost = null;
   if (save && save.machines) for (const [k, m] of save.machines) machineState.set(k, m);
   if (save && save.kFacing) loadKineticFacing(save.kFacing);
 
@@ -408,6 +408,30 @@ function refreshKinetics() {
   scanKinetics(world);
   recomputeKinetics(world);
   rebuildKineticVisuals(world, scene);
+}
+
+// ---- placement assist: a translucent ghost of where the held block will land ----
+let placeGhost = null;
+function ensurePlaceGhost() {
+  if (placeGhost && placeGhost.parent === scene) return;
+  const geo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
+  placeGhost = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x7ec8ff, transparent: true, opacity: 0.25, depthWrite: false }));
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
+  placeGhost.add(edges);
+  placeGhost.visible = false;
+  scene.add(placeGhost);
+}
+function updatePlaceGhost() {
+  ensurePlaceGhost();
+  const item = activeItem();
+  const placeable = item != null && isBlockItem(item) && PALETTE.includes(item);
+  if (!running || paused || furnaceOpen || chestOpen || settingsOpen || !placeable) { placeGhost.visible = false; return; }
+  const hit = raycast();
+  if (!hit) { placeGhost.visible = false; return; }
+  const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
+  if (world.getBlock(px, py, pz) !== BLOCK.AIR || overlapsPlayer(px, py, pz)) { placeGhost.visible = false; return; }
+  placeGhost.position.set(px + 0.5, py + 0.5, pz + 0.5);
+  placeGhost.visible = true;
 }
 
 // ---------------- inventory + items ----------------
@@ -1883,6 +1907,7 @@ function loop(now) {
 
   // Create kinetics: run machines + spin the cogs/wheels
   if (kPositions.size) { kineticTick(world, dimension, dt); updateKineticVisuals(dt); }
+  updatePlaceGhost();
 
   // hostile mobs spawn at night in the overworld; burn off at dawn
   if (dimension === 'overworld' && !peaceful && selectedWorld !== 'sandbox' && selectedWorld !== 'woolworld') {

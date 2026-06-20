@@ -60,13 +60,16 @@ function recomputeKinetics(world) {
     const sp = kSpeed.get(key);
     const p = key.split(','); const x = +p[0], y = +p[1], z = +p[2];
     const id = world.getBlock(x, y, z);
+    const idCog = id === BLOCK.COGWHEEL || id === BLOCK.LARGE_COGWHEEL;
     for (const [dx, dy, dz] of K_NB6) {
       const nk = kKey(x + dx, y + dy, z + dz);
       if (!kPositions.has(nk) || kSpeed.has(nk)) continue;
       const nid = world.getBlock(x + dx, y + dy, z + dz);
-      let ns = sp;
-      if (id === BLOCK.LARGE_COGWHEEL && nid === BLOCK.COGWHEEL) ns = sp * 2;       // big drives small faster
-      else if (id === BLOCK.COGWHEEL && nid === BLOCK.LARGE_COGWHEEL) ns = sp / 2;  // small drives big slower
+      const nCog = nid === BLOCK.COGWHEEL || nid === BLOCK.LARGE_COGWHEEL;
+      // a big cogwheel and a little cogwheel can't mesh — they refuse to turn together
+      if (idCog && nCog && id !== nid) continue;
+      // two meshing cogwheels turn in OPPOSITE directions; shafts pass it straight
+      const ns = (idCog && nCog) ? -sp : sp;
       kSpeed.set(nk, ns); queue.push(nk);
     }
   }
