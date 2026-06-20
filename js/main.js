@@ -181,7 +181,7 @@ function initWorld(seed, save) {
   if (endMobs) endMobs.clear();
   netherWorld = null; netherMobs = null; aetherWorld = null; aetherMobs = null; endWorld = null; endMobs = null;
   portalCooldown = 0; portalTimer = 0; endFightWasActive = false;
-  clearKineticVisuals(scene); machineState.clear(); clearKineticFacing(); placeGhost = null;
+  clearKineticVisuals(scene); machineState.clear(); clearKineticFacing(); placeGhost = null; kGhost = null; kGhostKey = '';
   if (save && save.machines) for (const [k, m] of save.machines) machineState.set(k, m);
   if (save && save.kFacing) loadKineticFacing(save.kFacing);
 
@@ -410,28 +410,70 @@ function refreshKinetics() {
   rebuildKineticVisuals(world, scene);
 }
 
-// ---- placement assist: a translucent ghost of where the held block will land ----
-let placeGhost = null;
+// ---- placement assist (Create-style): snap kinetic parts into line + ghost preview ----
+let placeGhost = null;            // cube ghost for ordinary blocks
+let kGhost = null, kGhostKey = '';  // holographic model ghost for kinetic parts
+const _AXV = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+
+// Where would the held kinetic part snap to? Returns {x,y,z,axis} or null.
+// Shafts extend down the axis of the shaft you're looking at; other parts inherit
+// the axis of the part they're placed against so cogs line up and mesh.
+function kineticAssist(hit, item) {
+  if (!hit || !isKinetic(hit.block)) return null;
+  const A = kFacing.get(kKey(hit.x, hit.y, hit.z)) || 'y';
+  if (item === BLOCK.SHAFT && hit.block === BLOCK.SHAFT) {
+    const av = _AXV[A];
+    const dir = player.getDirection();
+    const d = dir.x * av[0] + dir.y * av[1] + dir.z * av[2];
+    if (Math.abs(d) >= 0.25) {                 // looking along the shaft -> extend the line
+      const s = d > 0 ? 1 : -1;
+      let cx = hit.x, cy = hit.y, cz = hit.z;
+      for (let i = 0; i < 32; i++) {
+        const nx = cx + av[0] * s, ny = cy + av[1] * s, nz = cz + av[2] * s;
+        if (world.getBlock(nx, ny, nz) === BLOCK.SHAFT) { cx = nx; cy = ny; cz = nz; } else break;
+      }
+      const px = cx + av[0] * s, py = cy + av[1] * s, pz = cz + av[2] * s;
+      if (world.getBlock(px, py, pz) === BLOCK.AIR && !overlapsPlayer(px, py, pz)) return { x: px, y: py, z: pz, axis: A };
+    }
+  }
+  // general: drop it on the targeted face but aligned to the neighbour's axis
+  const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
+  if (world.getBlock(px, py, pz) === BLOCK.AIR && !overlapsPlayer(px, py, pz)) return { x: px, y: py, z: pz, axis: A };
+  return null;
+}
+// Resolve the final placement target + axis for the held item (assist or plain face).
+function placeTarget(hit, item) {
+  if (MODEL_BLOCKS.has(item)) { const a = kineticAssist(hit, item); if (a) return a; }
+  const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
+  if (world.getBlock(px, py, pz) !== BLOCK.AIR || overlapsPlayer(px, py, pz)) return null;
+  return { x: px, y: py, z: pz, axis: hit.nx ? 'x' : hit.ny ? 'y' : 'z' };
+}
+
 function ensurePlaceGhost() {
   if (placeGhost && placeGhost.parent === scene) return;
   const geo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
   placeGhost = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x7ec8ff, transparent: true, opacity: 0.25, depthWrite: false }));
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
-  placeGhost.add(edges);
+  placeGhost.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })));
   placeGhost.visible = false;
   scene.add(placeGhost);
 }
+function showKineticGhost(id, axis, t) {
+  const key = id + '|' + axis;
+  if (kGhostKey !== key) { if (kGhost) scene.remove(kGhost); kGhost = makeGhost(id, axis); scene.add(kGhost); kGhostKey = key; }
+  kGhost.position.set(t.x + 0.5, t.y + 0.5, t.z + 0.5); kGhost.visible = true;
+}
+function hideKineticGhost() { if (kGhost) kGhost.visible = false; }
+
 function updatePlaceGhost() {
   ensurePlaceGhost();
   const item = activeItem();
   const placeable = item != null && isBlockItem(item) && PALETTE.includes(item);
-  if (!running || paused || furnaceOpen || chestOpen || settingsOpen || !placeable) { placeGhost.visible = false; return; }
+  if (!running || paused || furnaceOpen || chestOpen || settingsOpen || !placeable) { placeGhost.visible = false; hideKineticGhost(); return; }
   const hit = raycast();
-  if (!hit) { placeGhost.visible = false; return; }
-  const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
-  if (world.getBlock(px, py, pz) !== BLOCK.AIR || overlapsPlayer(px, py, pz)) { placeGhost.visible = false; return; }
-  placeGhost.position.set(px + 0.5, py + 0.5, pz + 0.5);
-  placeGhost.visible = true;
+  const t = hit ? placeTarget(hit, item) : null;
+  if (!t) { placeGhost.visible = false; hideKineticGhost(); return; }
+  if (MODEL_BLOCKS.has(item)) { placeGhost.visible = false; showKineticGhost(item, t.axis, t); }
+  else { hideKineticGhost(); placeGhost.position.set(t.x + 0.5, t.y + 0.5, t.z + 0.5); placeGhost.visible = true; }
 }
 
 // ---------------- inventory + items ----------------
@@ -1200,14 +1242,14 @@ function placeBlock() {
   // otherwise place a block
   if (!isBlockItem(item) || !PALETTE.includes(item)) return;
   if (selectedMode === 'survival' && !(inventory[item] > 0)) return;
-  const px = hit.x + hit.nx, py = hit.y + hit.ny, pz = hit.z + hit.nz;
+  const t = placeTarget(hit, item);          // assisted snap target (or plain face)
+  if (!t) return;
+  const px = t.x, py = t.y, pz = t.z;
   let id = item;
   if (item === BLOCK.WOOD) {
     if (hit.nx !== 0) id = BLOCK.WOOD_X;
     else if (hit.nz !== 0) id = BLOCK.WOOD_Z;
   }
-  if (overlapsPlayer(px, py, pz)) return;
-  if (world.getBlock(px, py, pz) !== BLOCK.AIR) return;
   // pistons/repeaters/comparators remember the direction you placed them facing
   if (id === BLOCK.PISTON || id === BLOCK.PISTON_STICKY || id === BLOCK.REPEATER || id === BLOCK.COMPARATOR) {
     rsFacing.set(px + ',' + py + ',' + pz, facingFromYaw(player.yaw));
@@ -1216,7 +1258,7 @@ function placeBlock() {
   if (selectedMode === 'survival') take(item, 1);
   maybeUpdateRedstone(world, px, py, pz);
   if (isKinetic(id)) {
-    setKineticAxis(px, py, pz, hit.nx ? 'x' : hit.ny ? 'y' : 'z');   // align to the face placed against
+    setKineticAxis(px, py, pz, t.axis);       // align to the part it snapped to
     registerKinetic(px, py, pz); recomputeKinetics(world); rebuildKineticVisuals(world, scene);
   }
 }

@@ -270,6 +270,22 @@ function _orient(group, axis) {                 // point the model's local +Z al
   else if (axis === 'y') group.rotation.x = -Math.PI / 2;
 }
 
+// A blue holographic ghost of a kinetic part, oriented to `axis` (for placement assist).
+function makeGhost(id, axis) {
+  const def = _modelDef(id);
+  const inner = def ? def.build() : new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.98, 0.98), new THREE.MeshBasicMaterial());
+  const g = new THREE.Group(); g.add(inner);
+  if (def && def.oriented) _orient(g, axis || def.def);
+  g.traverse((o) => {
+    if (!o.material) return;
+    const m = o.material.clone ? o.material.clone() : new THREE.MeshBasicMaterial();
+    m.transparent = true; m.opacity = 0.5; m.depthWrite = false;
+    if (m.color) m.color.set(0x7ec8ff);
+    o.material = m;
+  });
+  return g;
+}
+
 function clearKineticVisuals(scene) {
   for (const v of kVisuals.values()) scene.remove(v.group);
   kVisuals = new Map();
