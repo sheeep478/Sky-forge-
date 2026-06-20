@@ -30,9 +30,16 @@ class Game:
         self._title_cube_y = 0.0
         self._title_cube_vy = 0.0
 
+        # Pointer state. `holding` (mouse OR touch) drives jumping; the tap
+        # de-dupe stops a touch's finger+synthesized-mouse pair double-firing.
+        self.holding = False
+        self._last_tap_ms = 0
+        self._last_tap_pos = (-99, -99)
+
         self._build_title()
         self._build_select()
         self._build_customize()
+        self._build_play_ui()
 
     # ── Builders ──────────────────────────────────────────────────────────────
 
@@ -78,9 +85,21 @@ class Game:
             rects.append(pygame.Rect(x0 + c * (s + gap), y0 + r * (s + gap), s, s))
         return rects
 
+    def _build_play_ui(self):
+        # On-screen controls so the game is fully playable by touch (no keyboard).
+        self.btn_pause = Button((WIDTH - 70, 20, 50, 44), "||", size=22)
+        cx = WIDTH // 2
+        self.btn_retry  = Button((cx - 220, 470, 200, 58), "Retry",
+                                 color=(40, 130, 70), hover=(60, 170, 95), size=24)
+        self.btn_levels = Button((cx + 20, 470, 200, 58), "Levels", size=24)
+
     # ── Event handling ──────────────────────────────────────────────────────
 
     def handle_event(self, event):
+        event = self._normalize_pointer(event)
+        if event is None:               # swallowed duplicate tap
+            return
+
         if self.state == "title":
             self._title_events(event)
         elif self.state == "select":
@@ -92,13 +111,43 @@ class Game:
         elif self.state in ("dead", "complete"):
             self._overlay_events(event)
 
+    def _normalize_pointer(self, event):
+        """Unify mouse + touch into `holding` (for jump) and a single left-click
+        event (for buttons). Returns the event to dispatch, or None to swallow a
+        duplicate touch/mouse tap. Non-pointer events pass through unchanged."""
+        et = event.type
+
+        # Press: from a left mouse button or a finger touch.
+        if (et == pygame.MOUSEBUTTONDOWN and event.button == 1) \
+                or et == pygame.FINGERDOWN:
+            self.holding = True
+            if et == pygame.FINGERDOWN:
+                pos = (int(event.x * WIDTH), int(event.y * HEIGHT))
+            else:
+                pos = event.pos
+            now = pygame.time.get_ticks()
+            if (now - self._last_tap_ms < 150
+                    and abs(pos[0] - self._last_tap_pos[0]) < 60
+                    and abs(pos[1] - self._last_tap_pos[1]) < 60):
+                return None             # finger + synthesized-mouse pair → keep one
+            self._last_tap_ms = now
+            self._last_tap_pos = pos
+            return pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=pos)
+
+        # Release: clear the hold; nothing else consumes these events.
+        if (et == pygame.MOUSEBUTTONUP and event.button == 1) \
+                or et == pygame.FINGERUP:
+            self.holding = False
+
+        return event
+
     def _title_events(self, event):
         if self.btn_play.clicked(event):
             self.state = "select"
         elif self.btn_custom.clicked(event):
             self.state = "customize"
         elif self.btn_quit.clicked(event):
-            pygame.quit(); raise SystemExit
+            pygame.event.post(pygame.event.Event(pygame.QUIT))
 
     def _select_events(self, event):
         if self.btn_select_back.clicked(event):
@@ -134,22 +183,26 @@ class Game:
             self.state = "title"
 
     def _play_events(self, event):
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+        quit_to_levels = (
+            (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE)
+            or self.btn_pause.clicked(event))
+        if quit_to_levels:
+            self.holding = False        # the pause tap shouldn't also jump
             self._stop_play()
             self.state = "select"
 
     def _overlay_events(self, event):
-        if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_SPACE, pygame.K_UP, pygame.K_RETURN):
-                if self.state == "dead":
-                    self._restart_level()
-                else:
-                    self.state = "select"; self.music.stop()
-            elif event.key == pygame.K_ESCAPE:
-                self.state = "select"; self.music.stop()
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 \
-                and self.state == "dead":
+        retry = self.btn_retry.clicked(event) or (
+            event.type == pygame.KEYDOWN
+            and event.key in (pygame.K_SPACE, pygame.K_UP, pygame.K_RETURN))
+        to_levels = self.btn_levels.clicked(event) or (
+            event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE)
+
+        if retry:
             self._restart_level()
+        elif to_levels:
+            self.state = "select"
+            self.music.stop()
 
     # ── Level lifecycle ───────────────────────────────────────────────────────
 
@@ -183,8 +236,8 @@ class Game:
         if self.state != "play" or self.cube is None:
             return
 
-        jump_held = (keys[pygame.K_SPACE] or keys[pygame.K_UP]
-                     or keys[pygame.K_w] or pygame.mouse.get_pressed()[0])
+        jump_held = (self.holding or keys[pygame.K_SPACE]
+                     or keys[pygame.K_UP] or keys[pygame.K_w])
         self.cube.update(jump_held)
         self.camera.follow(self.cube.x)
 
@@ -333,27 +386,28 @@ class Game:
              topleft=(20, 18))
         text(self.screen, f"Attempt {self.attempts}", 18, LIGHT_GRAY,
              topleft=(20, 48))
+        self.btn_pause.draw(self.screen)
 
     def _draw_dead(self):
         self._dim()
-        text(self.screen, "GAME OVER", 64, BAD, center=(WIDTH // 2, 240))
+        text(self.screen, "GAME OVER", 64, BAD, center=(WIDTH // 2, 210))
         text(self.screen, f"You reached {int(self.cube.progress * 100)}%",
-             28, WHITE, center=(WIDTH // 2, 310))
+             28, WHITE, center=(WIDTH // 2, 290))
         text(self.screen, f"Attempt {self.attempts}", 22, LIGHT_GRAY,
-             center=(WIDTH // 2, 350))
-        text(self.screen, "SPACE / Click to retry    -    Esc for levels",
-             20, GRAY, center=(WIDTH // 2, 430))
+             center=(WIDTH // 2, 330))
+        self.btn_retry.draw(self.screen)
+        self.btn_levels.draw(self.screen)
 
     def _draw_complete(self):
         self._dim()
-        text(self.screen, "LEVEL COMPLETE!", 64, GOOD, center=(WIDTH // 2, 250))
+        text(self.screen, "LEVEL COMPLETE!", 64, GOOD, center=(WIDTH // 2, 210))
         text(self.screen, self.level.song["name"], 30, WHITE,
-             center=(WIDTH // 2, 320))
+             center=(WIDTH // 2, 290))
         text(self.screen, f"Cleared in {self.attempts} attempt"
              + ("s" if self.attempts != 1 else ""),
-             22, LIGHT_GRAY, center=(WIDTH // 2, 362))
-        text(self.screen, "SPACE / Esc to return to levels",
-             20, GRAY, center=(WIDTH // 2, 440))
+             22, LIGHT_GRAY, center=(WIDTH // 2, 330))
+        self.btn_retry.draw(self.screen)
+        self.btn_levels.draw(self.screen)
 
     def _dim(self):
         ov = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)

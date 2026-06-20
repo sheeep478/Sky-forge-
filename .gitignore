@@ -14,3 +14,10 @@ venv/
 .gd_cache/
 gd_save.json
 screens/
+
+# pygbag web/mobile build output
+build/
+dist/
+
+# pygbag intermediate files
+*-pygbag.py

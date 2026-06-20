@@ -1,0 +1,6 @@
+# Build-time tooling for the web/mobile (pygbag) build and asset regeneration.
+# None of these are needed to *play* the desktop game (see requirements.txt).
+
+pygbag>=0.9.0      # compiles the game to WebAssembly for browsers/mobile
+soundfile>=0.12    # only to re-render the OGG soundtracks (tools/render_music.py)
+numpy>=1.23        # ditto

@@ -22,29 +22,53 @@ a time — across **7 levels, each with its own original soundtrack**.
 - **Progress tracking.** Per-level best percentage, completion stars, and an
   attempt counter — all persisted between sessions in `gd_save.json`.
 
-## Run it
+## Run it (desktop)
 
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-> First launch spends ~1 second synthesizing the 7 soundtracks, then caches them.
-> If no audio device is available the game still runs (silently).
+> The 7 soundtracks ship pre-rendered as small OGG files in `assets/music/`, so
+> startup is instant. If those assets are ever missing the game falls back to
+> synthesizing WAVs on first launch. With no audio device it still runs silently.
+
+## Play on mobile 📱
+
+The game runs on phones/tablets through the browser via
+[**pygbag**](https://github.com/pygame-web/pygbag), which compiles it to
+WebAssembly. It's fully touch-playable — **tap and hold anywhere to jump**, with
+on-screen **⏸ pause**, **Retry**, and **Levels** buttons (no keyboard needed).
+
+```bash
+pip install -r requirements-web.txt
+pygbag main.py            # serves at http://localhost:8000
+```
+
+Then on your phone (same Wi-Fi) open `http://<your-computer-ip>:8000`. To deploy
+publicly, build a static bundle and host it anywhere (e.g. GitHub Pages):
+
+```bash
+pygbag --build main.py    # outputs build/web/  (index.html + game bundle)
+```
+
+> Notes: landscape orientation plays best (the canvas auto-scales to fit).
+> Progress/customization save to the browser's virtual storage for the session.
 
 ## Controls
 
-| Action            | Keys                          |
-|-------------------|-------------------------------|
-| Jump              | `Space` / `Up` / `W` / Mouse  |
-| Back / pause out  | `Esc`                         |
-| Retry (on death)  | `Space` / Click               |
+| Action            | Keyboard                     | Touch / Mouse            |
+|-------------------|------------------------------|--------------------------|
+| Jump              | `Space` / `Up` / `W`         | Tap & hold the screen    |
+| Pause → levels    | `Esc`                        | **⏸** button (top-right) |
+| Retry (on death)  | `Space`                      | **Retry** button         |
+| Back to levels    | `Esc`                        | **Levels** button        |
 
 ## Project layout
 
 | File         | Responsibility                                            |
 |--------------|-----------------------------------------------------------|
-| `main.py`    | Entry point + game loop                                   |
+| `main.py`    | Async entry point + game loop (desktop **and** pygbag/web) |
 | `game.py`    | State machine: title, level select, customize, play       |
 | `level.py`   | Self-validating obstacle generator + level model          |
 | `solver.py`  | DFS beatability checker used to validate levels           |
@@ -56,3 +80,5 @@ python main.py
 | `menu.py`    | Reusable UI widgets (buttons, fonts)                      |
 | `save.py`    | Persistent save data (customization, unlocks, bests)      |
 | `config.py`  | Tunable constants (display, physics, colors)              |
+| `assets/music/` | Pre-rendered OGG soundtracks bundled with the game     |
+| `tools/render_music.py` | Re-renders the OGG soundtracks (build-time)    |

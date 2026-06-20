@@ -12,7 +12,11 @@ import struct
 import wave
 
 SAMPLE_RATE = 22050
-CACHE_DIR   = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".gd_cache")
+_HERE       = os.path.dirname(os.path.abspath(__file__))
+CACHE_DIR   = os.path.join(_HERE, ".gd_cache")
+# Pre-rendered tracks shipped with the game. These let the web/mobile build skip
+# the (slow-in-WASM) synthesizer entirely — and let desktop start instantly too.
+ASSET_DIR   = os.path.join(_HERE, "assets", "music")
 CACHE_VER   = 3                       # bump to force regeneration
 
 _A4 = 440.0
@@ -139,14 +143,13 @@ def _wave_tri(phase, duty):
     return _triangle(phase)
 
 
-def _synthesize(song) -> str:
-    """Build (or reuse) the WAV file for a song and return its path."""
-    idx = SONGS.index(song)
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    path = os.path.join(CACHE_DIR, f"song_{idx}_v{CACHE_VER}.wav")
-    if os.path.exists(path):
-        return path
+def render_samples(song):
+    """Synthesize a song to a list of mixed, soft-clipped float samples [-1, 1].
 
+    Shared by the WAV fallback (below) and the OGG asset renderer in
+    tools/render_music.py. This is the slow part — fine on desktop, but a reason
+    the web build ships pre-rendered assets instead of synthesizing at launch.
+    """
     beat_dur = 60.0 / song["bpm"] / 2.0          # eighth-note grid
     melody = song["melody"].split()
     bass = song["bass"].split()
@@ -160,19 +163,36 @@ def _synthesize(song) -> str:
 
     mel = _render_voice(melody, beat_dur, song["duty"], 0.32, _wave_square, total)
     bas = _render_voice(bass, bass_beat, 0.5, 0.30, _wave_tri, total)
+    return [math.tanh(mel[i] + bas[i]) for i in range(total)]    # soft limiter
 
-    # Mix, soft-clip, and write 16-bit PCM.
+
+def _render_wav(song, path) -> None:
+    """Write a song to a 16-bit PCM WAV (no third-party deps; desktop fallback)."""
+    samples = render_samples(song)
     frames = bytearray()
-    for i in range(total):
-        v = mel[i] + bas[i]
-        v = math.tanh(v)                          # gentle limiter
+    for v in samples:
         frames += struct.pack("<h", int(max(-1.0, min(1.0, v)) * 30000))
-
     with wave.open(path, "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(SAMPLE_RATE)
         wf.writeframes(bytes(frames))
+
+
+def track_path(index: int) -> str:
+    """Return a playable audio path for a song.
+
+    Prefers the pre-rendered bundled OGG asset (compact, browser-friendly, and
+    what keeps the web/mobile build instant). Falls back to synthesizing a WAV
+    into the on-disk cache when no asset is present (desktop dev without assets).
+    """
+    asset = os.path.join(ASSET_DIR, f"song_{index}.ogg")
+    if os.path.exists(asset):
+        return asset
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    path = os.path.join(CACHE_DIR, f"song_{index}_v{CACHE_VER}.wav")
+    if not os.path.exists(path):
+        _render_wav(SONGS[index], path)
     return path
 
 
@@ -191,10 +211,10 @@ class MusicPlayer:
             self.enabled = False
 
     def pregenerate(self) -> None:
-        """Synthesize all tracks up front (first launch only)."""
-        for song in SONGS:
+        """Ensure every track is available (no-op when assets are bundled)."""
+        for i in range(len(SONGS)):
             try:
-                _synthesize(song)
+                track_path(i)
             except Exception:
                 pass
 
@@ -203,7 +223,7 @@ class MusicPlayer:
             return
         try:
             import pygame
-            path = _synthesize(SONGS[index])
+            path = track_path(index)
             pygame.mixer.music.load(path)
             pygame.mixer.music.set_volume(0.55)
             pygame.mixer.music.play(-1 if loop else 0)

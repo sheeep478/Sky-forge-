@@ -4,26 +4,41 @@ import pygame
 
 from config import WIDTH, HEIGHT, GROUND_Y, TILE, GOLD
 
+# The vertical gradient is identical every frame for a given theme, so render it
+# once and cache the surface. This matters a lot on mobile/WASM where a per-frame
+# pixel loop would tank the frame rate.
+_bg_cache = {}
 
-def draw_background(screen: pygame.Surface, theme, scroll: float) -> None:
+
+def _gradient_surface(theme):
+    surf = _bg_cache.get(theme)
+    if surf is not None:
+        return surf
     top, bot = theme
-    # Vertical gradient.
-    for y in range(0, HEIGHT, 4):
+    surf = pygame.Surface((WIDTH, HEIGHT)).convert()
+    for y in range(0, HEIGHT, 2):
         t = y / HEIGHT
         c = (int(top[0] + (bot[0] - top[0]) * t),
              int(top[1] + (bot[1] - top[1]) * t),
              int(top[2] + (bot[2] - top[2]) * t))
-        pygame.draw.rect(screen, c, (0, y, WIDTH, 4))
+        pygame.draw.rect(surf, c, (0, y, WIDTH, 2))
+    _bg_cache[theme] = surf
+    return surf
+
+
+def draw_background(screen: pygame.Surface, theme, scroll: float) -> None:
+    top, _ = theme
+    screen.blit(_gradient_surface(theme), (0, 0))
 
     # Parallax diamonds drifting in the background.
     spacing = 220
     off = int(scroll * 0.3) % spacing
+    shade = (min(255, top[0] + 25), min(255, top[1] + 25), min(255, top[2] + 25))
     for gx in range(-spacing, WIDTH + spacing, spacing):
         for gy in range(120, GROUND_Y - 40, 180):
             cx = gx - off + 110
             d = 16
             pts = [(cx, gy - d), (cx + d, gy), (cx, gy + d), (cx - d, gy)]
-            shade = (top[0] + 25, top[1] + 25, top[2] + 25)
             pygame.draw.polygon(screen, shade, pts, 2)
 
 
