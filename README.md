@@ -55,6 +55,30 @@ pygbag --build main.py    # outputs build/web/  (index.html + game bundle)
 > Notes: landscape orientation plays best (the canvas auto-scales to fit).
 > Progress/customization save to the browser's virtual storage for the session.
 
+## Play it on a website 🌐
+
+The repo ships a GitHub Actions workflow
+([`.github/workflows/deploy-web.yml`](.github/workflows/deploy-web.yml)) that
+builds the WebAssembly bundle and publishes it to **GitHub Pages** on every push
+— giving you a public URL anyone can open on desktop or mobile, no install.
+
+**One-time setup:** in the repo's **Settings → Pages**, set **Source** to
+**GitHub Actions** (the workflow also tries to enable this automatically). After
+the next push, the site goes live at:
+
+```
+https://<your-username>.github.io/<repo-name>/
+```
+
+The workflow's **Deploy** step prints the exact URL, and you can re-run it any
+time from the **Actions** tab. Prefer another host? Build the bundle and upload
+it anywhere static:
+
+```bash
+pygbag --build main.py     # -> build/web/  (drag onto Netlify/Vercel, etc.)
+pygbag --archive main.py   # -> build/web.zip  (upload directly to itch.io)
+```
+
 ## Controls
 
 | Action            | Keyboard                     | Touch / Mouse            |

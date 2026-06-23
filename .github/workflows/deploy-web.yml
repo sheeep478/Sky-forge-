@@ -1,0 +1,59 @@
+name: Deploy to GitHub Pages
+
+# Builds the game into a WebAssembly bundle with pygbag and publishes it to
+# GitHub Pages, so it's playable at a public URL in any desktop or mobile
+# browser. Runs on every push to the game branch (and can be run manually).
+
+on:
+  push:
+    branches:
+      - main
+      - claude/geometry-dash-recreation-2jtihx
+  workflow_dispatch:
+
+# Permissions required by the GitHub Pages deploy action.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; newer pushes cancel in-flight runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pygbag
+        run: pip install pygbag
+
+      - name: Configure GitHub Pages
+        # Auto-enables Pages (Source = GitHub Actions) when the repo allows it.
+        uses: actions/configure-pages@v5
+
+      - name: Build WebAssembly bundle
+        run: python -m pygbag --build --title "Cube Dash" main.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
