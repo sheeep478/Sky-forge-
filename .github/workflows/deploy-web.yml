@@ -35,13 +35,6 @@ jobs:
       - name: Install pygbag
         run: pip install pygbag
 
-      - name: Configure GitHub Pages
-        # enablement: true turns on Pages (Source = GitHub Actions) via the API
-        # on first run, so no manual Settings → Pages step is needed.
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
       - name: Build WebAssembly bundle
         run: python -m pygbag --build --title "Cube Dash" main.py
 

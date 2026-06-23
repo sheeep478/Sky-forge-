@@ -62,9 +62,10 @@ The repo ships a GitHub Actions workflow
 builds the WebAssembly bundle and publishes it to **GitHub Pages** on every push
 — giving you a public URL anyone can open on desktop or mobile, no install.
 
-The workflow **enables Pages automatically** on its first successful run (via
-`enablement: true`). If your org/repo policy blocks that, enable it manually
-once under **Settings → Pages → Source → GitHub Actions**. The site goes live at:
+**One-time setup (required):** open the repo's **Settings → Pages**, and under
+**Build and deployment → Source** choose **GitHub Actions**. (GitHub doesn't let
+the Actions token turn Pages on by itself, so this single click is needed once.)
+Then re-run the workflow from the **Actions** tab. The site goes live at:
 
 ```
 https://<your-username>.github.io/<repo-name>/
