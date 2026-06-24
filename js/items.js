@@ -123,7 +123,8 @@ const ITEM_INFO = {
   [ITEM.APPLE]: { name: 'Apple' }, [ITEM.GOLDEN_APPLE]: { name: 'Golden Apple' },
 };
 
-function isBlockItem(id) { return id < 100; }
+// Blocks live in 0..99 and a high range 240..255; items occupy 100..239.
+function isBlockItem(id) { return id < 100 || id >= 240; }
 function itemName(id) {
   return isBlockItem(id) ? (BLOCK_INFO[id] ? BLOCK_INFO[id].name : '?') : (ITEM_INFO[id] ? ITEM_INFO[id].name : '?');
 }
@@ -195,6 +196,9 @@ const RECIPES = [
   { out: BLOCK.STAIRS_BRICK, n: 4, rows: ['M..', 'MM.', 'MMM'], key: { M: BLOCK.BRICK } },
   { out: BLOCK.FENCE, n: 3, rows: ['PSP', 'PSP'], key: { P: BLOCK.PLANK, S: ITEM.STICK } },
   { out: BLOCK.GLASS_PANE, n: 16, rows: ['GGG', 'GGG'], key: { G: BLOCK.GLASS } },
+  { out: BLOCK.LADDER, n: 3, rows: ['S.S', 'SSS', 'S.S'], key: { S: ITEM.STICK } },
+  { out: BLOCK.DOOR, n: 3, rows: ['PP', 'PP', 'PP'], key: { P: BLOCK.PLANK } },
+  { out: BLOCK.TRAPDOOR, n: 2, rows: ['PPP', 'PPP'], key: { P: BLOCK.PLANK } },
   tool(ITEM.W_PICK, BLOCK.PLANK, 'pick'), tool(ITEM.W_AXE, BLOCK.PLANK, 'axe'),
   tool(ITEM.W_SHOVEL, BLOCK.PLANK, 'shovel'), tool(ITEM.W_SWORD, BLOCK.PLANK, 'sword'), tool(ITEM.W_HOE, BLOCK.PLANK, 'hoe'),
   tool(ITEM.S_PICK, BLOCK.COBBLE, 'pick'), tool(ITEM.S_AXE, BLOCK.COBBLE, 'axe'),

@@ -57,6 +57,12 @@ class Player {
 
     let sp = this.speed * (input.sprint ? this.sprintMul : 1);
 
+    // on a ladder? (any cell the body occupies)
+    let onLadder = false;
+    const lfx = Math.floor(this.pos.x), lfz = Math.floor(this.pos.z);
+    for (let yy = Math.floor(this.pos.y); yy <= Math.floor(this.pos.y + TALL - 0.01); yy++)
+      if (w.getBlock(lfx, yy, lfz) === BLOCK.LADDER) { onLadder = true; break; }
+
     if (this.flying) {
       sp *= 1.8;
       this.vel.x = fx * sp;
@@ -72,6 +78,12 @@ class Player {
       if ((input.jump || input.up) && this.onGround) {
         this.vel.y = 8.4;
         this.onGround = false;
+      }
+      // ladders: gentle vertical control instead of falling
+      if (onLadder) {
+        if (input.jump || input.up) this.vel.y = 4.2;
+        else if (input.mz < -0.1) this.vel.y = 2.6;   // pushing forward climbs up
+        else this.vel.y = Math.max(this.vel.y, -2.0);  // otherwise slide down slowly
       }
     }
 

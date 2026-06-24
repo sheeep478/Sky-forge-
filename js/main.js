@@ -505,7 +505,9 @@ let rsButtons = [];      // active buttons {x,y,z,t} reverting after a pulse
 
 function iconStyle(id) {
   const icon = itemIcon(id);
-  const fallback = isBlockItem(id) && BLOCK_INFO[id] ? BLOCK_INFO[id].color : '#3a3f4b';
+  // shaped blocks have see-through icons; a dark slot makes the silhouette read
+  const shaped = typeof SHAPED !== 'undefined' && SHAPED.has(id);
+  const fallback = shaped ? '#23262e' : (isBlockItem(id) && BLOCK_INFO[id] ? BLOCK_INFO[id].color : '#3a3f4b');
   const bg = icon ? `background-image:url('${icon}');background-size:cover;` : '';
   return `${bg}background-color:${fallback};`;
 }
@@ -1067,7 +1069,7 @@ function raycast(maxDist = 6, includeLiquid = false) {
   while (t <= maxDist) {
     const b = world.getBlock(x, y, z);
     const bi = BLOCK_INFO[b];
-    if (b !== BLOCK.AIR && bi && (bi.solid || bi.crop || bi.rs || (includeLiquid && bi.liquid))) {
+    if (b !== BLOCK.AIR && bi && (bi.solid || bi.crop || bi.rs || bi.climb || (includeLiquid && bi.liquid))) {
       return { x, y, z, nx, ny, nz, block: b };
     }
     if (tMaxX < tMaxY && tMaxX < tMaxZ) {
@@ -1106,6 +1108,7 @@ function clearKineticAt(x, y, z, block, collect) {
 function mineInstant() {
   const hit = raycast();
   if (!hit || BLOCK_INFO[hit.block].unbreakable) return;
+  if (hit.block === BLOCK.DOOR) { breakDoor(hit); return; }
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
   if (hit.block === BLOCK.SAPLING) removeSapling(hit.x, hit.y, hit.z);
   else if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
@@ -1117,6 +1120,7 @@ function mineInstant() {
 }
 function doBreakSurvival(hit) {
   if (BLOCK_INFO[hit.block].unbreakable) return;
+  if (hit.block === BLOCK.DOOR) { breakDoor(hit); return; }
   const tool = activeTool();
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
   if (hit.block === BLOCK.SAPLING) { removeSapling(hit.x, hit.y, hit.z); give(BLOCK.SAPLING, 1); return; }
@@ -1140,6 +1144,30 @@ function stairFacing() {
   const d = player.getDirection();
   if (Math.abs(d.x) > Math.abs(d.z)) return d.x > 0 ? 1 : 3;
   return d.z > 0 ? 2 : 0;
+}
+// open/close both halves of a door
+function toggleDoor(x, y, z) {
+  const m = world.getMeta(x, y, z) || {};
+  const ly = m.up ? y - 1 : y;
+  const open = !((world.getMeta(x, ly, z) || {}).open);
+  world.setMeta(x, ly, z, { f: (world.getMeta(x, ly, z) || {}).f || 0, open });
+  world.setMeta(x, ly + 1, z, { f: (world.getMeta(x, ly + 1, z) || {}).f || 0, open, up: true });
+  world.remeshArea(x - 1, x + 1, z - 1, z + 1);
+  flash(open ? 'Door opened' : 'Door closed');
+}
+function toggleTrap(x, y, z) {
+  const m = world.getMeta(x, y, z) || {};
+  world.setMeta(x, y, z, { f: m.f || 0, h: m.h, open: !m.open });
+  world.remeshArea(x - 1, x + 1, z - 1, z + 1);
+  flash(m.open ? 'Trapdoor closed' : 'Trapdoor opened');
+}
+// breaking a door removes both halves
+function breakDoor(hit) {
+  const m = world.getMeta(hit.x, hit.y, hit.z) || {};
+  const ly = m.up ? hit.y - 1 : hit.y;
+  for (const yy of [ly, ly + 1]) { world.setBlock(hit.x, yy, hit.z, BLOCK.AIR, false); world.deleteMeta(hit.x, yy, hit.z); }
+  world.remeshArea(hit.x - 1, hit.x + 1, hit.z - 1, hit.z + 1);
+  if (selectedMode === 'survival') give(BLOCK.DOOR, 1);
 }
 
 // fire an arrow from the bow toward where you're looking
@@ -1187,6 +1215,8 @@ function placeBlock() {
   if (hit.block === BLOCK.CHEST) { openChest(hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CRAFTING_TABLE) { openCraftingTable(); return; }
   if (hit.block === BLOCK.BED) { sleep(hit.x, hit.y, hit.z); return; }
+  if (hit.block === BLOCK.DOOR) { toggleDoor(hit.x, hit.y, hit.z); return; }
+  if (hit.block === BLOCK.TRAPDOOR) { toggleTrap(hit.x, hit.y, hit.z); return; }
   // redstone: flip levers, press buttons
   if (hit.block === BLOCK.LEVER || hit.block === BLOCK.LEVER_ON) {
     world.setBlock(hit.x, hit.y, hit.z, hit.block === BLOCK.LEVER ? BLOCK.LEVER_ON : BLOCK.LEVER);
@@ -1283,6 +1313,23 @@ function placeBlock() {
   // slabs/stairs store their top/bottom + facing so the mesher can shape them
   if (SLABS.has(id)) world.setMeta(px, py, pz, { f: 0, h: hit.ny < 0 ? 'top' : 'bottom' });
   else if (STAIRS.has(id)) world.setMeta(px, py, pz, { f: stairFacing(), h: hit.ny < 0 ? 'top' : 'bottom' });
+  else if (id === BLOCK.LADDER) {
+    if (hit.ny !== 0) { flash('Ladders go on a wall'); return; }
+    const f = hit.nx > 0 ? 3 : hit.nx < 0 ? 1 : hit.nz > 0 ? 0 : 2;       // plate against the wall
+    world.setMeta(px, py, pz, { f }); world.setBlock(px, py, pz, id);
+    if (selectedMode === 'survival') take(item, 1); return;
+  } else if (id === BLOCK.DOOR) {
+    if (world.getBlock(px, py + 1, pz) !== BLOCK.AIR || overlapsPlayer(px, py + 1, pz)) { flash('Need 2 blocks of room'); return; }
+    const f = stairFacing();
+    world.setMeta(px, py, pz, { f, open: false });
+    world.setMeta(px, py + 1, pz, { f, open: false, up: true });
+    world.setBlock(px, py, pz, id, false); world.setBlock(px, py + 1, pz, id);
+    if (selectedMode === 'survival') take(item, 1); return;
+  } else if (id === BLOCK.TRAPDOOR) {
+    world.setMeta(px, py, pz, { f: stairFacing(), open: false, h: hit.ny < 0 ? 'top' : 'bottom' });
+    world.setBlock(px, py, pz, id);
+    if (selectedMode === 'survival') take(item, 1); return;
+  }
   world.setBlock(px, py, pz, id);
   if (selectedMode === 'survival') take(item, 1);
   maybeUpdateRedstone(world, px, py, pz);
