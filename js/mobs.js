@@ -107,10 +107,10 @@ class Mob {
     this.dead = false;
     this.kbx = 0; this.kbz = 0;   // knockback velocity
     this.drop = ORE_SHEEP[type] ? { id: ORE_SHEEP[type].drop, n: 1 + (Math.random() * 2 | 0) }
-      : type === 'cow' ? { id: ITEM.LEATHER, n: 1 }
-      : type === 'pig' ? { id: ITEM.PORKCHOP, n: 1 }
+      : type === 'cow' ? [{ id: ITEM.BEEF, n: 1 + (Math.random() * 2 | 0) }, { id: ITEM.LEATHER, n: Math.random() < 0.5 ? 1 : 0 }]
+      : type === 'pig' ? { id: ITEM.PORKCHOP, n: 1 + (Math.random() * 2 | 0) }
       : type === 'sheep' ? { id: BLOCK.WOOL, n: 1 }
-      : { id: ITEM.CHICKEN, n: 1 };
+      : [{ id: ITEM.CHICKEN, n: 1 }, { id: ITEM.FEATHER, n: Math.random() * 2 | 0 }];
   }
 
   place(x, y, z) { this.pos.set(x, y, z); }
@@ -193,7 +193,185 @@ class Mob {
   dispose(scene) { scene.remove(this.obj); }
 }
 
-// ---- hostile: Zombie ----
+// ---- shared helpers for the new hostiles ----
+function pushDrop(arr, d) { if (!d) return; if (Array.isArray(d)) arr.push(...d); else arr.push(d); }
+// gravity + ground resolve; returns {onGround, feetL}
+function groundStep(self, dt, w) {
+  const bx = Math.floor(self.pos.x), bz = Math.floor(self.pos.z);
+  const feetL = Math.floor(self.pos.y + 0.0001);
+  let stand = -Infinity;
+  for (let L = feetL; L >= feetL - 4; L--) if (w.isSolid(bx, L - 1, bz)) { stand = L; break; }
+  self.vy -= 22 * dt; if (self.vy < -40) self.vy = -40;
+  let ny = self.pos.y + self.vy * dt, onGround = false;
+  if (stand !== -Infinity && ny <= stand) { ny = stand; self.vy = 0; onGround = true; }
+  self.pos.y = ny;
+  return { onGround, feetL };
+}
+function walkToward(self, dt, w, ux, uz, feetL, speed) {
+  const nx = self.pos.x + ux * speed * dt, nz = self.pos.z + uz * speed * dt;
+  const tbx = Math.floor(nx), tbz = Math.floor(nz);
+  const stepUp = w.isSolid(tbx, feetL, tbz);
+  const headBlocked = w.isSolid(tbx, feetL + (stepUp ? 2 : 1), tbz);
+  if (!headBlocked) { self.pos.x = nx; self.pos.z = nz; if (stepUp && w.isSolid(tbx, feetL - 1, tbz)) self.pos.y = feetL + 1; self.anim += dt * 8; return true; }
+  return false;
+}
+function knockSlide(self, dt, w) {
+  if (Math.abs(self.kbx) + Math.abs(self.kbz) <= 0.05) return;
+  const nx = self.pos.x + self.kbx * dt, nz = self.pos.z + self.kbz * dt;
+  if (!w.isSolid(Math.floor(nx), Math.floor(self.pos.y), Math.floor(nz))) { self.pos.x = nx; self.pos.z = nz; }
+  const decay = Math.pow(0.0001, dt); self.kbx *= decay; self.kbz *= decay;
+}
+
+// ---- hostile: Skeleton (shoots arrows) ----
+function buildSkeleton() {
+  const g = new THREE.Group();
+  const bone = mat(0xe6e6dd), dark = mat(0x262626);
+  g.add(box(0.5, 0.5, 0.5, bone, 0, 1.55, 0));
+  g.add(box(0.12, 0.1, 0.05, dark, -0.12, 1.6, -0.26)); g.add(box(0.12, 0.1, 0.05, dark, 0.12, 1.6, -0.26));
+  g.add(box(0.3, 0.7, 0.18, bone, 0, 1.0, 0));
+  const arms = []; const la = box(0.12, 0.65, 0.12, bone, -0.28, 1.15, -0.12); g.add(la); arms.push(la);
+  const ra = box(0.12, 0.65, 0.12, bone, 0.28, 1.15, -0.12); g.add(ra); arms.push(ra);
+  g.add(box(0.06, 0.55, 0.06, mat(0x7a5a32), 0.34, 1.15, -0.2));   // bow
+  const legs = []; for (const x of [-0.1, 0.1]) { const l = box(0.12, 0.65, 0.12, bone, x, 0.33, 0); g.add(l); legs.push(l); }
+  return { group: g, legs, arms };
+}
+class Skeleton {
+  constructor(world, scene) {
+    this.world = world; const b = buildSkeleton(); this.obj = b.group; this.legs = b.legs; this.arms = b.arms; scene.add(this.obj);
+    this.pos = new THREE.Vector3(); this.yaw = 0; this.vy = 0; this.anim = 0; this.hp = 16; this.dead = false;
+    this.speed = 1.5; this.shootCD = 1.5 + Math.random(); this.kbx = 0; this.kbz = 0; this.attacked = 0;
+    this.drop = [{ id: ITEM.BONE, n: 1 + (Math.random() * 2 | 0) }, { id: ITEM.ARROW, n: Math.random() * 2 | 0 }];
+  }
+  place(x, y, z) { this.pos.set(x, y, z); }
+  takeHit(dmg, kx, kz) { this.hp -= dmg; this.kbx = kx * 6; this.kbz = kz * 6; this.vy = Math.max(this.vy, 4); if (this.hp <= 0) this.dead = true; }
+  update(dt, target, mgr) {
+    const w = this.world; this.attacked = 0; this.shootCD -= dt;
+    const { onGround, feetL } = groundStep(this, dt, w);
+    let dx = target.x - this.pos.x, dz = target.z - this.pos.z; const dist = Math.hypot(dx, dz); this.yaw = Math.atan2(-dx, -dz);
+    const move = dist > 9 ? 1 : dist < 5 ? -0.7 : 0;     // kite: keep mid range
+    if (onGround && move !== 0) { const ux = dx / (dist || 1), uz = dz / (dist || 1); if (!walkToward(this, dt, w, ux * move, uz * move, feetL, this.speed) && move > 0) this.vy = 7; }
+    if (dist < 16 && this.shootCD <= 0 && mgr) {
+      const ex = this.pos.x, ey = this.pos.y + 1.45, ez = this.pos.z;
+      let vx = target.x - ex, vy = (target.y + 0.9) - ey, vz = target.z - ez; const L = Math.hypot(vx, vy, vz) || 1;
+      vy += L * 0.06; const L2 = Math.hypot(vx, vy, vz) || 1, sp = 24;
+      mgr.spawnArrow(ex, ey, ez, vx / L2 * sp, vy / L2 * sp, vz / L2 * sp, false);
+      this.shootCD = 1.6 + Math.random() * 1.2;
+    }
+    knockSlide(this, dt, w); if (this.pos.y < -25) this.dead = true;
+    this.obj.position.copy(this.pos); this.obj.rotation.y = this.yaw;
+    const swing = onGround ? Math.sin(this.anim) * 0.5 : 0; this.legs.forEach((l, i) => { l.rotation.x = swing * (i % 2 === 0 ? 1 : -1); });
+  }
+  dispose(scene) { scene.remove(this.obj); }
+}
+
+// ---- hostile: Creeper (explodes) ----
+function buildCreeper() {
+  const g = new THREE.Group();
+  const grn = mat(0x6fbf3a), drk = mat(0x3a6a22), face = mat(0x16240f);
+  g.add(box(0.5, 0.5, 0.5, grn, 0, 1.3, 0));
+  g.add(box(0.13, 0.17, 0.05, face, -0.12, 1.34, -0.26)); g.add(box(0.13, 0.17, 0.05, face, 0.12, 1.34, -0.26)); g.add(box(0.16, 0.22, 0.05, face, 0, 1.14, -0.26));
+  g.add(box(0.42, 0.8, 0.3, grn, 0, 0.75, 0));
+  const legs = []; for (const [x, z] of [[-0.13, -0.18], [0.13, -0.18], [-0.13, 0.18], [0.13, 0.18]]) { const l = box(0.18, 0.3, 0.18, drk, x, 0.15, z); g.add(l); legs.push(l); }
+  return { group: g, legs };
+}
+class Creeper {
+  constructor(world, scene) {
+    this.world = world; const b = buildCreeper(); this.obj = b.group; this.legs = b.legs; scene.add(this.obj);
+    this.pos = new THREE.Vector3(); this.yaw = 0; this.vy = 0; this.anim = 0; this.hp = 20; this.dead = false;
+    this.speed = 1.75; this.fuse = 0; this.kbx = 0; this.kbz = 0; this.attacked = 0;
+    this.drop = { id: ITEM.GUNPOWDER, n: 1 + (Math.random() * 2 | 0) };
+  }
+  place(x, y, z) { this.pos.set(x, y, z); }
+  takeHit(dmg, kx, kz) { this.hp -= dmg; this.kbx = kx * 7; this.kbz = kz * 7; this.vy = Math.max(this.vy, 4); if (this.hp <= 0) this.dead = true; }
+  update(dt, target, mgr) {
+    const w = this.world; this.attacked = 0;
+    const { onGround, feetL } = groundStep(this, dt, w);
+    let dx = target.x - this.pos.x, dz = target.z - this.pos.z; const dist = Math.hypot(dx, dz); this.yaw = Math.atan2(-dx, -dz);
+    const close = dist < 2.3 && Math.abs(target.y - this.pos.y) < 3;
+    if (onGround && dist > 1.0 && !close) { const ux = dx / (dist || 1), uz = dz / (dist || 1); if (!walkToward(this, dt, w, ux, uz, feetL, this.speed)) this.vy = 7; }
+    this.fuse = close ? this.fuse + dt : Math.max(0, this.fuse - dt * 2);
+    this.obj.scale.setScalar(this.fuse > 0 ? 1 + Math.sin(this.fuse * 28) * 0.12 : 1);
+    if (this.fuse > 1.5 && mgr) { mgr.explode(this.pos.x, this.pos.y + 0.6, this.pos.z, 3.4, target); this.dead = true; }
+    knockSlide(this, dt, w); if (this.pos.y < -25) this.dead = true;
+    this.obj.position.copy(this.pos); this.obj.rotation.y = this.yaw;
+    const swing = onGround ? Math.sin(this.anim) * 0.5 : 0; this.legs.forEach((l, i) => { l.rotation.x = swing * (i % 2 === 0 ? 1 : -1); });
+  }
+  dispose(scene) { scene.remove(this.obj); }
+}
+
+// ---- hostile: Spider (fast) ----
+function buildSpider() {
+  const g = new THREE.Group();
+  const body = mat(0x2a2018), eye = mat(0xb02a2a);
+  g.add(box(0.5, 0.4, 0.5, body, 0, 0.45, -0.15));
+  g.add(box(0.72, 0.46, 0.8, body, 0, 0.45, 0.5));
+  g.add(box(0.08, 0.08, 0.04, eye, -0.12, 0.52, -0.4)); g.add(box(0.08, 0.08, 0.04, eye, 0.12, 0.52, -0.4));
+  const legs = []; for (const i of [-1, 1]) for (const z of [-0.1, 0.12, 0.34]) { const l = box(0.6, 0.07, 0.07, body, i * 0.42, 0.4, z); l.rotation.z = i * 0.5; g.add(l); legs.push(l); }
+  return { group: g, legs };
+}
+class Spider {
+  constructor(world, scene) {
+    this.world = world; const b = buildSpider(); this.obj = b.group; this.legs = b.legs; scene.add(this.obj);
+    this.pos = new THREE.Vector3(); this.yaw = 0; this.vy = 0; this.anim = 0; this.hp = 16; this.dead = false;
+    this.speed = 2.7; this.attackCD = 0; this.kbx = 0; this.kbz = 0; this.attacked = 0;
+    this.drop = { id: ITEM.STRING, n: 1 + (Math.random() * 2 | 0) };
+  }
+  place(x, y, z) { this.pos.set(x, y, z); }
+  takeHit(dmg, kx, kz) { this.hp -= dmg; this.kbx = kx * 7; this.kbz = kz * 7; this.vy = Math.max(this.vy, 3); if (this.hp <= 0) this.dead = true; }
+  update(dt, target) {
+    const w = this.world; this.attacked = 0; this.attackCD -= dt;
+    const { onGround, feetL } = groundStep(this, dt, w);
+    let dx = target.x - this.pos.x, dz = target.z - this.pos.z; const dist = Math.hypot(dx, dz); this.yaw = Math.atan2(-dx, -dz);
+    if (onGround && dist > 1.0) { const ux = dx / (dist || 1), uz = dz / (dist || 1); if (!walkToward(this, dt, w, ux, uz, feetL, this.speed)) this.vy = 7.5; }
+    if (dist < 1.5 && Math.abs(target.y - this.pos.y) < 2 && this.attackCD <= 0) { this.attacked = 3; this.attackCD = 1.0; }
+    knockSlide(this, dt, w); if (this.pos.y < -25) this.dead = true;
+    this.obj.position.copy(this.pos); this.obj.rotation.y = this.yaw;
+    const swing = onGround ? Math.sin(this.anim) * 0.35 : 0; this.legs.forEach((l, i) => { l.rotation.z = (i < 3 ? -1 : 1) * 0.5 + swing * (i % 2 ? 1 : -1); });
+  }
+  dispose(scene) { scene.remove(this.obj); }
+}
+
+// ---- arrow projectile (skeletons shoot at the player; the bow shoots at mobs) ----
+function buildArrow() {
+  const g = new THREE.Group();
+  g.add(box(0.07, 0.07, 0.55, mat(0x6a5a3a), 0, 0, 0));
+  g.add(box(0.14, 0.14, 0.06, mat(0xdadada), 0, 0, -0.28));
+  return g;
+}
+class Arrow {
+  constructor(scene, x, y, z, vx, vy, vz, fromPlayer) {
+    this.obj = buildArrow(); scene.add(this.obj);
+    this.pos = new THREE.Vector3(x, y, z); this.vel = new THREE.Vector3(vx, vy, vz);
+    this.fromPlayer = fromPlayer; this.life = 4; this.dead = false; this.stuck = false; this.dmg = fromPlayer ? 5 : 4;
+    this.obj.position.copy(this.pos);
+  }
+  update(dt, w, mgr, target) {
+    this.life -= dt; if (this.life <= 0) { this.dead = true; return; }
+    if (this.stuck) return;
+    this.vel.y -= 18 * dt;
+    const nx = this.pos.x + this.vel.x * dt, ny = this.pos.y + this.vel.y * dt, nz = this.pos.z + this.vel.z * dt;
+    if (w.isSolid(Math.floor(nx), Math.floor(ny), Math.floor(nz))) { this.stuck = true; this.life = Math.min(this.life, 1.5); return; }
+    this.pos.set(nx, ny, nz); this.obj.position.copy(this.pos);
+    this.obj.lookAt(this.pos.x + this.vel.x, this.pos.y + this.vel.y, this.pos.z + this.vel.z);
+    if (this.fromPlayer) {
+      for (const arr of [mgr.hostiles, mgr.bosses, mgr.mobs]) {
+        for (const m of arr) {
+          if (m.dead) continue;
+          const d = Math.hypot(m.pos.x - this.pos.x, (m.pos.y + 0.9) - this.pos.y, m.pos.z - this.pos.z);
+          if (d > (m.hitRadius || 0.8) + 0.3) continue;
+          const kl = Math.hypot(this.vel.x, this.vel.z) || 1;
+          m.takeHit(this.dmg, this.vel.x / kl, this.vel.z / kl);
+          if (m.dead) { if (m === mgr.dragon) mgr.dragon = null; pushDrop(mgr._arrowDrops, m.drop); const ix = arr.indexOf(m); if (ix >= 0) arr.splice(ix, 1); m.dispose(mgr.scene); }
+          this.dead = true; return;
+        }
+      }
+    } else if (target) {
+      const d = Math.hypot(target.x - this.pos.x, (target.y + 0.9) - this.pos.y, target.z - this.pos.z);
+      if (d < 0.9) { mgr._arrowPlayerDmg += this.dmg; this.dead = true; }
+    }
+  }
+  dispose(scene) { scene.remove(this.obj); }
+}
 function buildZombie() {
   const g = new THREE.Group();
   const skin = mat(0x4a7a3a), shirt = mat(0x3a5fa0), pants = mat(0x2a3a6a), face = mat(0x35602b);
@@ -483,6 +661,10 @@ class MobManager {
     this.hostiles = [];
     this.bosses = [];          // end crystals + the ender dragon
     this.dragon = null;
+    this.arrows = [];          // flying arrows
+    this._arrowDrops = [];     // drops from mobs an arrow killed (collected by main)
+    this._arrowPlayerDmg = 0;  // arrow damage dealt to the player this frame
+    this._explosionDmg = 0;    // creeper explosion damage to the player this frame
   }
 
   spawnInitial(centerX, centerZ, count = 6, maxDist = 14, forceType = null) {
@@ -512,12 +694,13 @@ class MobManager {
       if (m.dead) { m.dispose(this.scene); this.mobs.splice(i, 1); }
     }
     let dmg = 0;
+    this._arrowPlayerDmg = 0; this._explosionDmg = 0;
     if (target) {
       for (let i = this.hostiles.length - 1; i >= 0; i--) {
         const z = this.hostiles[i];
-        z.update(dt, target);
+        z.update(dt, target, this);
         dmg += z.attacked;
-        const far = Math.hypot(z.pos.x - target.x, z.pos.z - target.z) > 64;
+        const far = Math.hypot(z.pos.x - target.x, z.pos.z - target.z) > 70;
         if (z.dead || far) { z.dispose(this.scene); this.hostiles.splice(i, 1); }
       }
       // bosses (end crystals + dragon) never despawn from distance
@@ -527,8 +710,33 @@ class MobManager {
         dmg += b.attacked || 0;
         if (b.dead) { if (b === this.dragon) this.dragon = null; b.dispose(this.scene); this.bosses.splice(i, 1); }
       }
+      // arrows
+      for (let i = this.arrows.length - 1; i >= 0; i--) {
+        const a = this.arrows[i];
+        a.update(dt, this.world, this, target);
+        if (a.dead) { a.dispose(this.scene); this.arrows.splice(i, 1); }
+      }
+      dmg += this._arrowPlayerDmg + this._explosionDmg;
     }
     return dmg;
+  }
+
+  spawnArrow(x, y, z, vx, vy, vz, fromPlayer) { this.arrows.push(new Arrow(this.scene, x, y, z, vx, vy, vz, fromPlayer)); }
+
+  // creeper / TNT-style blast: shred breakable blocks and hurt the player nearby
+  explode(x, y, z, radius, target) {
+    const w = this.world, r = Math.ceil(radius);
+    const cx = Math.floor(x), cy = Math.floor(y), cz = Math.floor(z);
+    let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9, hit = false;
+    const SAFE = new Set([BLOCK.OBSIDIAN, BLOCK.END_PORTAL_FRAME, BLOCK.END_PORTAL_FRAME_EYE, BLOCK.END_PORTAL, BLOCK.PORTAL, BLOCK.AETHER_PORTAL, BLOCK.DRAGON_EGG, BLOCK.WATER, BLOCK.LAVA]);
+    for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+      if (dx * dx + dy * dy + dz * dz > radius * radius) continue;
+      const b = w.getBlock(cx + dx, cy + dy, cz + dz);
+      if (!b || (BLOCK_INFO[b] && BLOCK_INFO[b].unbreakable) || SAFE.has(b)) continue;
+      if (Math.random() < 0.75) { w.setBlock(cx + dx, cy + dy, cz + dz, BLOCK.AIR, false); hit = true; minX = Math.min(minX, cx + dx); maxX = Math.max(maxX, cx + dx); minZ = Math.min(minZ, cz + dz); maxZ = Math.max(maxZ, cz + dz); }
+    }
+    if (hit) w.remeshArea(minX, maxX, minZ, maxZ);
+    if (target) { const d = Math.hypot(target.x - x, target.y - y, target.z - z); if (d < radius + 1) this._explosionDmg += Math.max(2, Math.round((1 - d / (radius + 1)) * 16)); }
   }
 
   crystalsAlive() { let n = 0; for (const b of this.bosses) if (b.isCrystal && !b.dead) n++; return n; }
@@ -578,7 +786,11 @@ class MobManager {
       const bz = Math.floor(centerZ + Math.sin(ang) * dist);
       const y = this.world.surfaceY(bx, bz);
       if (y <= 0 || !this.world.isSolid(bx, y - 1, bz)) continue;
-      const z = new Zombie(this.world, this.scene);
+      const r = Math.random();
+      const z = r < 0.42 ? new Zombie(this.world, this.scene)
+        : r < 0.68 ? new Skeleton(this.world, this.scene)
+        : r < 0.86 ? new Spider(this.world, this.scene)
+        : new Creeper(this.world, this.scene);
       z.place(bx + 0.5, y, bz + 0.5);
       this.hostiles.push(z);
       spawned++;
@@ -606,7 +818,7 @@ class MobManager {
     best.takeHit(dmg, kx / kl, kz / kl);
     const drops = [];
     if (best.dead) {
-      if (best.drop) drops.push(best.drop);
+      pushDrop(drops, best.drop);
       if (best === this.dragon) this.dragon = null;
       for (const arr of [this.hostiles, this.mobs, this.bosses]) {
         const ix = arr.indexOf(best);
@@ -626,17 +838,20 @@ class MobManager {
     for (const m of this.mobs) m.dispose(this.scene);
     for (const z of this.hostiles) z.dispose(this.scene);
     for (const b of this.bosses) b.dispose(this.scene);
-    this.mobs = []; this.hostiles = []; this.bosses = []; this.dragon = null;
+    for (const a of this.arrows) a.dispose(this.scene);
+    this.mobs = []; this.hostiles = []; this.bosses = []; this.dragon = null; this.arrows = [];
   }
 
   hide() {
     for (const m of this.mobs) this.scene.remove(m.obj);
     for (const z of this.hostiles) this.scene.remove(z.obj);
     for (const b of this.bosses) this.scene.remove(b.obj);
+    for (const a of this.arrows) this.scene.remove(a.obj);
   }
   show() {
     for (const m of this.mobs) this.scene.add(m.obj);
     for (const z of this.hostiles) this.scene.add(z.obj);
     for (const b of this.bosses) this.scene.add(b.obj);
+    for (const a of this.arrows) this.scene.add(a.obj);
   }
 }

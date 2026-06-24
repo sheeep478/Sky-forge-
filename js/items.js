@@ -26,6 +26,9 @@ const ITEM = {
   // Create-style materials + processing products
   ANDESITE_ALLOY: 200, BRASS_INGOT: 201, IRON_SHEET: 202, BRASS_SHEET: 203,
   CRUSHED_IRON: 204, CRUSHED_GOLD: 205, WHEAT_FLOUR: 206, DOUGH: 207,
+  // combat + food
+  BONE: 210, ARROW: 211, BOW: 212, STRING: 213, FEATHER: 214, FLINT: 215, GUNPOWDER: 216,
+  BEEF: 217, COOKED_BEEF: 218, COOKED_PORKCHOP: 219, COOKED_CHICKEN: 220, APPLE: 221, GOLDEN_APPLE: 222,
 };
 
 // Tool stats: matching a block's preferred tool multiplies mining speed.
@@ -57,6 +60,12 @@ const FOOD = {
   [ITEM.PORKCHOP]: { hunger: 3, heal: 1 },
   [ITEM.CHICKEN]:  { hunger: 2, heal: 1 },
   [ITEM.MUTTON]:   { hunger: 3, heal: 1 },
+  [ITEM.BEEF]:     { hunger: 3, heal: 0 },
+  [ITEM.COOKED_BEEF]:     { hunger: 8, heal: 1 },
+  [ITEM.COOKED_PORKCHOP]: { hunger: 8, heal: 1 },
+  [ITEM.COOKED_CHICKEN]:  { hunger: 6, heal: 1 },
+  [ITEM.APPLE]:    { hunger: 4, heal: 0 },
+  [ITEM.GOLDEN_APPLE]: { hunger: 4, heal: 10 },
 };
 function isFood(id) { return !!FOOD[id]; }
 
@@ -107,6 +116,11 @@ const ITEM_INFO = {
   [ITEM.IRON_SHEET]: { name: 'Iron Sheet' }, [ITEM.BRASS_SHEET]: { name: 'Brass Sheet' },
   [ITEM.CRUSHED_IRON]: { name: 'Crushed Iron Ore' }, [ITEM.CRUSHED_GOLD]: { name: 'Crushed Gold Ore' },
   [ITEM.WHEAT_FLOUR]: { name: 'Wheat Flour' }, [ITEM.DOUGH]: { name: 'Dough' },
+  [ITEM.BONE]: { name: 'Bone' }, [ITEM.ARROW]: { name: 'Arrow' }, [ITEM.BOW]: { name: 'Bow' },
+  [ITEM.STRING]: { name: 'String' }, [ITEM.FEATHER]: { name: 'Feather' }, [ITEM.FLINT]: { name: 'Flint' },
+  [ITEM.GUNPOWDER]: { name: 'Gunpowder' }, [ITEM.BEEF]: { name: 'Raw Beef' }, [ITEM.COOKED_BEEF]: { name: 'Steak' },
+  [ITEM.COOKED_PORKCHOP]: { name: 'Cooked Porkchop' }, [ITEM.COOKED_CHICKEN]: { name: 'Cooked Chicken' },
+  [ITEM.APPLE]: { name: 'Apple' }, [ITEM.GOLDEN_APPLE]: { name: 'Golden Apple' },
 };
 
 function isBlockItem(id) { return id < 100; }
@@ -166,6 +180,10 @@ const RECIPES = [
   { out: BLOCK.MILLSTONE, n: 1, rows: ['CCC', 'CGC', 'CCC'], key: { C: BLOCK.COBBLE, G: BLOCK.COGWHEEL } },
   { out: BLOCK.MECHANICAL_PRESS, n: 1, rows: ['I', 'G', 'A'], key: { I: ITEM.IRON_INGOT, G: BLOCK.COGWHEEL, A: BLOCK.ANDESITE_CASING } },
   { out: BLOCK.ENCASED_FAN, n: 1, shapeless: [BLOCK.ANDESITE_CASING, BLOCK.SHAFT] },
+  // ---- combat + food ----
+  { out: ITEM.BOW, n: 1, rows: ['.TS', 'T.S', '.TS'], key: { T: ITEM.STICK, S: ITEM.STRING } },
+  { out: ITEM.ARROW, n: 4, rows: ['F', 'S', 'T'], key: { F: ITEM.FLINT, S: ITEM.STICK, T: ITEM.FEATHER } },
+  { out: ITEM.GOLDEN_APPLE, n: 1, rows: ['GGG', 'GAG', 'GGG'], key: { G: ITEM.GOLD_INGOT, A: ITEM.APPLE } },
   tool(ITEM.W_PICK, BLOCK.PLANK, 'pick'), tool(ITEM.W_AXE, BLOCK.PLANK, 'axe'),
   tool(ITEM.W_SHOVEL, BLOCK.PLANK, 'shovel'), tool(ITEM.W_SWORD, BLOCK.PLANK, 'sword'), tool(ITEM.W_HOE, BLOCK.PLANK, 'hoe'),
   tool(ITEM.S_PICK, BLOCK.COBBLE, 'pick'), tool(ITEM.S_AXE, BLOCK.COBBLE, 'axe'),
@@ -248,6 +266,9 @@ const SMELTS = [
   { in: BLOCK.GOLD_ORE, out: ITEM.GOLD_INGOT },
   { in: BLOCK.SAND, out: BLOCK.GLASS },
   { in: BLOCK.COBBLE, out: BLOCK.STONE },
+  { in: ITEM.PORKCHOP, out: ITEM.COOKED_PORKCHOP },
+  { in: ITEM.CHICKEN, out: ITEM.COOKED_CHICKEN },
+  { in: ITEM.BEEF, out: ITEM.COOKED_BEEF },
 ];
 const FUELS = [ITEM.COAL, BLOCK.PLANK, BLOCK.WOOD];   // priority order, 1 unit each
 function fuelInInv(inv) { return FUELS.find((id) => (inv[id] || 0) > 0); }
@@ -400,6 +421,22 @@ function buildItemIcons() {
   _itemIcons[ITEM.CRUSHED_GOLD] = _icon((x) => crushed(x, '#f5d23a'));
   _itemIcons[ITEM.WHEAT_FLOUR] = _icon((x) => { x.fillStyle = '#efe8d6'; x.beginPath(); x.moveTo(8, 24); x.lineTo(24, 24); x.lineTo(20, 12); x.lineTo(12, 12); x.closePath(); x.fill(); x.fillStyle = '#fff'; x.fillRect(13, 14, 3, 3); });
   _itemIcons[ITEM.DOUGH] = _icon((x) => { x.fillStyle = '#e8d8a8'; x.beginPath(); x.arc(16, 17, 9, 0, 7); x.fill(); x.fillStyle = '#d6c48e'; x.fillRect(11, 14, 3, 2); x.fillRect(18, 18, 3, 2); });
+
+  // ---- combat + food ----
+  _itemIcons[ITEM.BONE] = _icon((x) => { x.fillStyle = '#eceadd'; x.fillRect(13, 7, 6, 18); x.fillRect(9, 6, 5, 5); x.fillRect(18, 6, 5, 5); x.fillRect(9, 21, 5, 5); x.fillRect(18, 21, 5, 5); });
+  _itemIcons[ITEM.ARROW] = _icon((x) => { x.save(); x.translate(16, 16); x.rotate(-0.78); x.fillStyle = '#6a5a3a'; x.fillRect(-1, -12, 3, 22); x.fillStyle = '#cfcfcf'; x.beginPath(); x.moveTo(0, -15); x.lineTo(4, -9); x.lineTo(-4, -9); x.closePath(); x.fill(); x.fillStyle = '#e8e8e8'; x.fillRect(-3, 7, 6, 2); x.restore(); });
+  _itemIcons[ITEM.BOW] = _icon((x) => { x.strokeStyle = '#8a5a2a'; x.lineWidth = 3; x.beginPath(); x.arc(8, 16, 13, -1.0, 1.0); x.stroke(); x.strokeStyle = '#dfdfdf'; x.lineWidth = 1; x.beginPath(); x.moveTo(15, 5); x.lineTo(15, 27); x.stroke(); });
+  _itemIcons[ITEM.STRING] = _icon((x) => { x.strokeStyle = '#dcdcdc'; x.lineWidth = 2; x.beginPath(); x.moveTo(8, 6); x.quadraticCurveTo(24, 12, 10, 18); x.quadraticCurveTo(2, 24, 22, 26); x.stroke(); });
+  _itemIcons[ITEM.FEATHER] = _icon((x) => { x.save(); x.translate(16, 16); x.rotate(0.5); x.fillStyle = '#f2f2f2'; x.beginPath(); x.ellipse(0, 0, 5, 13, 0, 0, 7); x.fill(); x.strokeStyle = '#b8b8b8'; x.lineWidth = 1; x.beginPath(); x.moveTo(0, -12); x.lineTo(0, 13); x.stroke(); x.restore(); });
+  _itemIcons[ITEM.FLINT] = _icon((x) => { x.fillStyle = '#3a3a40'; x.beginPath(); x.moveTo(7, 22); x.lineTo(11, 9); x.lineTo(24, 13); x.lineTo(22, 24); x.closePath(); x.fill(); x.fillStyle = '#55555c'; x.fillRect(13, 13, 4, 4); });
+  _itemIcons[ITEM.GUNPOWDER] = _icon((x) => { x.fillStyle = '#3a3a3a'; for (const [px, py] of [[9, 11], [15, 9], [20, 13], [12, 18], [18, 20], [22, 10], [10, 22]]) x.fillRect(px, py, 3, 3); x.fillStyle = '#6a6a6a'; x.fillRect(15, 15, 2, 2); });
+  const meat = (x, raw, c1, c2) => { x.fillStyle = c1; x.fillRect(7, 11, 16, 11); x.fillStyle = c2; x.fillRect(9, 13, 12, 3); x.fillStyle = '#efe7d6'; x.fillRect(20, 12, 4, 5); };
+  _itemIcons[ITEM.BEEF] = _icon((x) => meat(x, true, '#c64a44', '#d96a64'));
+  _itemIcons[ITEM.COOKED_BEEF] = _icon((x) => meat(x, false, '#7a4a2a', '#9a6238'));
+  _itemIcons[ITEM.COOKED_PORKCHOP] = _icon((x) => meat(x, false, '#caa06a', '#d8b684'));
+  _itemIcons[ITEM.COOKED_CHICKEN] = _icon((x) => meat(x, false, '#d8b06a', '#e6c489'));
+  _itemIcons[ITEM.APPLE] = _icon((x) => { x.fillStyle = '#d63a32'; x.beginPath(); x.arc(16, 18, 9, 0, 7); x.fill(); x.fillStyle = '#b02a24'; x.beginPath(); x.arc(13, 16, 3, 0, 7); x.fill(); x.fillStyle = '#5a3a1a'; x.fillRect(15, 6, 2, 5); x.fillStyle = '#3f8f33'; x.fillRect(17, 7, 4, 3); });
+  _itemIcons[ITEM.GOLDEN_APPLE] = _icon((x) => { x.fillStyle = '#f0c632'; x.beginPath(); x.arc(16, 18, 9, 0, 7); x.fill(); x.fillStyle = '#ffe98a'; x.beginPath(); x.arc(13, 16, 3, 0, 7); x.fill(); x.fillStyle = '#7a5a1a'; x.fillRect(15, 6, 2, 5); x.fillStyle = '#caf0a0'; x.fillRect(17, 7, 4, 3); });
 }
 function itemIcon(id) {
   if (isBlockItem(id)) return blockIcon(id);

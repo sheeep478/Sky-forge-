@@ -107,7 +107,7 @@ let miningActive = false, miningTarget = null, miningProgress = 0, miningNeeded 
 // day/night + combat
 let timeOfDay = 0.25;        // 0..1, starts at morning
 let ambient = null;
-let spawnTimer = 0, hurtCD = 0, fluidTimer = 0;
+let spawnTimer = 0, hurtCD = 0, fluidTimer = 0, bowCD = 0;
 const DAY_LENGTH = 480;      // seconds for a full day–night cycle
 const NIGHT_MIN = 0.12;      // darkest sky-light multiplier
 
@@ -490,6 +490,8 @@ const CREATIVE_EXTRA = [ITEM.WHEAT_SEEDS, BLOCK.SAPLING, BLOCK.TALL_GRASS, ITEM.
   ITEM.ENDER_PEARL, ITEM.BLAZE_ROD, ITEM.BLAZE_POWDER, ITEM.EYE_OF_ENDER,
   ITEM.ANDESITE_ALLOY, ITEM.BRASS_INGOT, ITEM.IRON_SHEET, ITEM.BRASS_SHEET,
   ITEM.CRUSHED_IRON, ITEM.CRUSHED_GOLD, ITEM.WHEAT_FLOUR, ITEM.DOUGH,
+  ITEM.BOW, ITEM.ARROW, ITEM.BONE, ITEM.STRING, ITEM.FEATHER, ITEM.FLINT, ITEM.GUNPOWDER,
+  ITEM.BEEF, ITEM.COOKED_BEEF, ITEM.COOKED_PORKCHOP, ITEM.COOKED_CHICKEN, ITEM.APPLE, ITEM.GOLDEN_APPLE,
   ITEM.L_HELM, ITEM.L_CHEST, ITEM.L_LEGS, ITEM.L_BOOTS,
   ITEM.I_HELM, ITEM.I_CHEST, ITEM.I_LEGS, ITEM.I_BOOTS];
 let furnaceOpen = false;
@@ -527,7 +529,9 @@ function giveEverything(equipArmor) {
     ITEM.MUTTON, ITEM.BUCKET, ITEM.WATER_BUCKET, ITEM.LAVA_BUCKET, BLOCK.SAPLING, BLOCK.TALL_GRASS,
     ITEM.ENDER_PEARL, ITEM.BLAZE_ROD, ITEM.BLAZE_POWDER, ITEM.EYE_OF_ENDER,
     ITEM.ANDESITE_ALLOY, ITEM.BRASS_INGOT, ITEM.IRON_SHEET, ITEM.BRASS_SHEET,
-    ITEM.CRUSHED_IRON, ITEM.CRUSHED_GOLD, ITEM.WHEAT_FLOUR, ITEM.DOUGH];
+    ITEM.CRUSHED_IRON, ITEM.CRUSHED_GOLD, ITEM.WHEAT_FLOUR, ITEM.DOUGH,
+    ITEM.BOW, ITEM.ARROW, ITEM.BONE, ITEM.STRING, ITEM.FEATHER, ITEM.FLINT, ITEM.GUNPOWDER,
+    ITEM.BEEF, ITEM.COOKED_BEEF, ITEM.COOKED_PORKCHOP, ITEM.COOKED_CHICKEN, ITEM.APPLE, ITEM.GOLDEN_APPLE];
   for (const id of PALETTE) inventory[id] = 64;
   for (const [id] of WOOL_COLORS) inventory[id] = 64;              // every wool colour
   for (const id of ALL_TOOLS) inventory[id] = 1;
@@ -1118,13 +1122,25 @@ function doBreakSurvival(hit) {
   if (hit.block === BLOCK.TALL_GRASS) { if (Math.random() < 0.5) give(ITEM.WHEAT_SEEDS, 1); return; }
   if (BLOCK_INFO[hit.block].crop) { harvestCrop(hit.block, hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
-  const drop = blockDrop(hit.block, tool);
+  let drop = blockDrop(hit.block, tool);
+  if (hit.block === BLOCK.GRAVEL && Math.random() < 0.12) drop = { id: ITEM.FLINT, n: 1 };   // flint from gravel
   if (drop) give(drop.id, drop.n);
-  // leaves occasionally yield a sapling
+  // leaves occasionally yield a sapling or an apple
   if (hit.block === BLOCK.LEAVES && Math.random() < 0.1) give(BLOCK.SAPLING, 1);
+  if (hit.block === BLOCK.LEAVES && Math.random() < 0.05) give(ITEM.APPLE, 1);
   if (isKinetic(hit.block)) clearKineticAt(hit.x, hit.y, hit.z, hit.block, true);
   rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z); rsCompSub.delete(hit.x + ',' + hit.y + ',' + hit.z);
   maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
+}
+
+// fire an arrow from the bow toward where you're looking
+function fireBow() {
+  if (bowCD > 0) return;
+  if (selectedMode === 'survival' && !(inventory[ITEM.ARROW] > 0)) { flash('No arrows'); return; }
+  const eye = player.getEyePos(), dir = player.getDirection(), sp = 32;
+  mobs.spawnArrow(eye.x + dir.x * 0.5, eye.y + dir.y * 0.5, eye.z + dir.z * 0.5, dir.x * sp, dir.y * sp, dir.z * sp, true);
+  if (selectedMode === 'survival') take(ITEM.ARROW, 1);
+  bowCD = 0.4;
 }
 
 // place a block OR use the held item (eat / till / plant)
@@ -1132,6 +1148,7 @@ function placeBlock() {
   if (!running || paused || furnaceOpen || chestOpen || settingsOpen) return;
   const item = activeItem();
   if (isFood(item)) { eatFood(item); return; }   // food needs no target
+  if (item === ITEM.BOW) { fireBow(); return; }   // ranged
   // empty bucket: scoop the liquid you're aiming at
   if (item === ITEM.BUCKET) {
     const lh = raycast(6, true);
@@ -1982,9 +1999,14 @@ function loop(now) {
     }
   }
 
+  if (bowCD > 0) bowCD -= dt;
   world.update(player.pos.x, player.pos.z);
   drainLootChests();
   const contact = mobs.update(dt, player.pos);
+  if (mobs._arrowDrops && mobs._arrowDrops.length) {   // arrow kills go to your pack
+    if (selectedMode === 'survival') for (const d of mobs._arrowDrops) if (d.n > 0) give(d.id, d.n);
+    mobs._arrowDrops.length = 0;
+  }
   // boss bar + dragon-death detection
   updateBossBar();
   if (dimension === 'end' && endFightWasActive && !mobs.dragon && !endDragonDefeated) onDragonDefeated();
