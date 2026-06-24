@@ -92,13 +92,18 @@ class Player {
 
   _collides(px, py, pz) {
     const w = this.world;
-    const minX = Math.floor(px - HALF), maxX = Math.floor(px + HALF);
-    const minY = Math.floor(py), maxY = Math.floor(py + TALL - 0.01);
-    const minZ = Math.floor(pz - HALF), maxZ = Math.floor(pz + HALF);
+    const x0 = px - HALF, x1 = px + HALF, y0 = py, y1 = py + TALL, z0 = pz - HALF, z1 = pz + HALF;
+    const minX = Math.floor(x0), maxX = Math.floor(x1);
+    const minY = Math.floor(y0), maxY = Math.floor(y1 - 0.001);
+    const minZ = Math.floor(z0), maxZ = Math.floor(z1);
     for (let x = minX; x <= maxX; x++)
       for (let y = minY; y <= maxY; y++)
-        for (let z = minZ; z <= maxZ; z++)
-          if (w.isSolid(x, y, z)) return true;
+        for (let z = minZ; z <= maxZ; z++) {
+          const boxes = w.solidBoxes ? w.solidBoxes(x, y, z) : (w.isSolid(x, y, z) ? [[x, y, z, x + 1, y + 1, z + 1]] : null);
+          if (!boxes) continue;
+          for (const b of boxes)
+            if (x1 > b[0] && x0 < b[3] && y1 > b[1] && y0 < b[4] && z1 > b[2] && z0 < b[5]) return true;
+        }
     return false;
   }
 

@@ -200,7 +200,7 @@ function initWorld(seed, save) {
   world = new World(scene, gameSeed, selectedWorld, save ? save.genVersion : undefined);
   overworld = world;
   if (isTouch) world.renderDistance = 3;   // lighter for mobile
-  if (save) overworld.loadEdits(save.overworldEdits);
+  if (save) { overworld.loadEdits(save.overworldEdits); overworld.loadMeta(save.meta); }
 
   // spawn position
   let sx = 0.5, sz = 0.5;
@@ -1111,6 +1111,7 @@ function mineInstant() {
   else if (BLOCK_INFO[hit.block].crop) removeCrop(hit.x, hit.y, hit.z);
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
   if (isKinetic(hit.block)) clearKineticAt(hit.x, hit.y, hit.z, hit.block, false);
+  if (SHAPED.has(hit.block)) world.deleteMeta(hit.x, hit.y, hit.z);
   rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z); rsCompSub.delete(hit.x + ',' + hit.y + ',' + hit.z);
   maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
 }
@@ -1129,8 +1130,16 @@ function doBreakSurvival(hit) {
   if (hit.block === BLOCK.LEAVES && Math.random() < 0.1) give(BLOCK.SAPLING, 1);
   if (hit.block === BLOCK.LEAVES && Math.random() < 0.05) give(ITEM.APPLE, 1);
   if (isKinetic(hit.block)) clearKineticAt(hit.x, hit.y, hit.z, hit.block, true);
+  if (SHAPED.has(hit.block)) world.deleteMeta(hit.x, hit.y, hit.z);
   rsFacing.delete(hit.x + ',' + hit.y + ',' + hit.z); rsCompSub.delete(hit.x + ',' + hit.y + ',' + hit.z);
   maybeUpdateRedstone(world, hit.x, hit.y, hit.z);
+}
+
+// which way should a stair face? (tall part rises in your look direction)
+function stairFacing() {
+  const d = player.getDirection();
+  if (Math.abs(d.x) > Math.abs(d.z)) return d.x > 0 ? 1 : 3;
+  return d.z > 0 ? 2 : 0;
 }
 
 // fire an arrow from the bow toward where you're looking
@@ -1271,6 +1280,9 @@ function placeBlock() {
   if (id === BLOCK.PISTON || id === BLOCK.PISTON_STICKY || id === BLOCK.REPEATER || id === BLOCK.COMPARATOR) {
     rsFacing.set(px + ',' + py + ',' + pz, facingFromYaw(player.yaw));
   }
+  // slabs/stairs store their top/bottom + facing so the mesher can shape them
+  if (SLABS.has(id)) world.setMeta(px, py, pz, { f: 0, h: hit.ny < 0 ? 'top' : 'bottom' });
+  else if (STAIRS.has(id)) world.setMeta(px, py, pz, { f: stairFacing(), h: hit.ny < 0 ? 'top' : 'bottom' });
   world.setBlock(px, py, pz, id);
   if (selectedMode === 'survival') take(item, 1);
   maybeUpdateRedstone(world, px, py, pz);
@@ -1681,6 +1693,7 @@ function saveGame() {
       crops, saplings, chests, returnPos, spawnPoint,
       rsFacing: [...rsFacing.entries()], rsCompSub: [...rsCompSub],
       overworldEdits: overworld ? overworld.serializeEdits() : [],
+      meta: overworld ? overworld.serializeMeta() : [],
       netherEdits: netherWorld ? netherWorld.serializeEdits() : (pendingNetherEdits || []),
       aetherEdits: aetherWorld ? aetherWorld.serializeEdits() : (pendingAetherEdits || []),
       endEdits: endWorld ? endWorld.serializeEdits() : (pendingEndEdits || []),

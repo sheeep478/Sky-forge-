@@ -58,6 +58,7 @@ class World {
     this.noise = new Noise(seed);
     this.chunks = new Map();        // "cx,cz" -> { blocks: Uint8Array, mesh, tmesh, maxY }
     this.edits = new Map();         // "x,y,z" -> id, for blocks changed after generation
+    this.meta = new Map();          // "x,y,z" -> { f, h } orientation for slabs/stairs
     this.lootChests = [];           // structure chests awaiting loot registration
     this.renderDistance = 4;
 
@@ -639,6 +640,7 @@ class World {
           const b = ch.blocks[this._idx(x, y, z)];
           if (b === BLOCK.AIR) continue;
           if (MODEL_BLOCKS.has(b)) continue;   // drawn as a 3D model, not a cube
+          if (SHAPED.has(b)) { this._emitShape(b, x, y, z, ox, oz, { pos, col, uv, lgt, idx, tpos, tcol, tuv, tlgt, tidx }, lightAt); continue; }
           const bInfo = BLOCK_INFO[b];
           const isT = (b === BLOCK.WATER || b === BLOCK.GLASS || b === BLOCK.PORTAL || b === BLOCK.AETHER_PORTAL || (bInfo && (bInfo.crop || bInfo.rs)));
           const wx = ox + x, wz = oz + z;
@@ -691,6 +693,56 @@ class World {
     g.setAttribute('light', new THREE.Float32BufferAttribute(lgt, 2));
     g.setIndex(idx);
     return new THREE.Mesh(g, mat);
+  }
+
+  // Emit the partial-box geometry for a shaped block (slab/stair/fence/pane).
+  _emitShape(b, lx, y, lz, ox, oz, A, lightAt) {
+    const wx = ox + lx, wz = oz + lz;
+    const meta = this.meta.get(wx + ',' + y + ',' + wz);
+    const nbr = (dx, dy, dz) => this.getBlock(wx + dx, y + dy, wz + dz);
+    const boxes = shapeBoxes(b, meta, nbr);
+    const alpha = BLOCK_INFO[b] && BLOCK_INFO[b].alpha;
+    const P = alpha ? A.tpos : A.pos, C = alpha ? A.tcol : A.col, U = alpha ? A.tuv : A.uv, L = alpha ? A.tlgt : A.lgt, I = alpha ? A.tidx : A.idx;
+    const lt = lightAt(wx, y, wz);
+    for (const bx of boxes) {
+      const [x0, y0, z0, x1, y1, z1] = bx;
+      for (const d of DIRS) {
+        const n = d.n;
+        // skip faces flush with the cell edge when a full block hides them
+        const onEdge = (n[0] > 0 && x1 === 1) || (n[0] < 0 && x0 === 0) || (n[1] > 0 && y1 === 1) || (n[1] < 0 && y0 === 0) || (n[2] > 0 && z1 === 1) || (n[2] < 0 && z0 === 0);
+        if (onEdge && isOccluder(nbr(n[0], n[1], n[2]))) continue;
+        const uvr = faceUV(b, d.face), br = d.bright, start = P.length / 3;
+        for (let c = 0; c < 4; c++) {
+          const cc = d.corners[c];
+          const vx = cc[0] ? x1 : x0, vy = cc[1] ? y1 : y0, vz = cc[2] ? z1 : z0;
+          P.push(lx + vx, y + vy, lz + vz); C.push(br, br, br); L.push(lt[0], lt[1]);
+          let su, sv;                      // texture coords from in-plane local position
+          if (n[0] !== 0) { su = vz; sv = vy; } else if (n[1] !== 0) { su = vx; sv = vz; } else { su = vx; sv = vy; }
+          U.push(uvr[0] + (uvr[2] - uvr[0]) * su, uvr[1] + (uvr[3] - uvr[1]) * sv);
+        }
+        I.push(start, start + 1, start + 2, start, start + 2, start + 3);
+      }
+    }
+  }
+
+  // ---- block orientation metadata (slabs/stairs) ----
+  setMeta(wx, wy, wz, m) { this.meta.set(wx + ',' + wy + ',' + wz, m); }
+  getMeta(wx, wy, wz) { return this.meta.get(wx + ',' + wy + ',' + wz); }
+  deleteMeta(wx, wy, wz) { this.meta.delete(wx + ',' + wy + ',' + wz); }
+  serializeMeta() { const out = []; for (const [k, m] of this.meta) out.push([k, m.f || 0, m.h === 'top' ? 1 : 0]); return out; }
+  loadMeta(arr) { if (!arr) return; for (const e of arr) this.meta.set(e[0], { f: e[1], h: e[2] ? 'top' : 'bottom' }); }
+
+  // Collision AABBs (world coords) for the block in a cell, or null if non-solid.
+  solidBoxes(wx, wy, wz) {
+    const b = this.getBlock(wx, wy, wz);
+    if (b === BLOCK.AIR) return null;
+    const bi = BLOCK_INFO[b];
+    if (!bi || !bi.solid) return null;
+    if (SHAPED.has(b)) {
+      const nbr = (dx, dy, dz) => this.getBlock(wx + dx, wy + dy, wz + dz);
+      return shapeBoxes(b, this.meta.get(wx + ',' + wy + ',' + wz), nbr).map((bx) => [wx + bx[0], wy + bx[1], wz + bx[2], wx + bx[3], wy + bx[4], wz + bx[5]]);
+    }
+    return [[wx, wy, wz, wx + 1, wy + 1, wz + 1]];
   }
 
   // ---- streaming around the player ----
