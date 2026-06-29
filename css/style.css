@@ -90,14 +90,14 @@ canvas { display: block; position: fixed; top: 0; left: 0; }
 
 .menu-panel {
   position: relative; z-index: 1;
-  background: linear-gradient(180deg, rgba(36,40,50,0.84), rgba(20,23,30,0.92));
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  background: linear-gradient(180deg, #252a34, #14171e);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 18px;
   padding: 24px 26px 20px;
   width: min(460px, 94vw);
   max-height: 94vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   box-shadow: 0 24px 70px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08);
   text-align: center;
 }
