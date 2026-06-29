@@ -13,7 +13,8 @@ const SEA_LEVEL = 24;
 // shifts the terrain under existing builds. BUMP this when generation changes,
 // and branch on `this.genVersion` instead of editing an existing version path.
 // v2 adds nether fortresses, strongholds (with the End portal room), and the End.
-const GEN_VERSION = 2;
+// v3 adds biomes (desert / forest / snowy / plains) to regular worlds.
+const GEN_VERSION = 3;
 
 // The End's obsidian pillars (fixed, deterministic) so terrain generation and
 // the boss-fight code agree on where the end crystals sit.
@@ -250,11 +251,23 @@ class World {
     this._set(ch, 10, base + 4, 10, BLOCK.SAND);
   }
 
+  // climate -> biome (only on regular worlds at gen v3+)
+  _biomeAt(wx, wz) {
+    const t = this.noise.fbm(wx + 9000, wz - 4000, 2, 0.5, 0.0042);   // temperature
+    const h = this.noise.fbm(wx - 6000, wz + 8000, 2, 0.5, 0.0042);   // humidity
+    if (t < 0.34) return 'snowy';
+    if (t > 0.40 && h < 0.40) return 'desert';
+    if (h > 0.50) return 'forest';
+    return 'plains';
+  }
+
   _genRegular(cx, cz, ch) {
     const rnd = mulberry32((this.seed ^ (cx * 73856093) ^ (cz * 19349663)) >>> 0);
+    const biomes = this.genVersion >= 3 && this.type === 'regular';
     for (let x = 0; x < CHUNK; x++) {
       for (let z = 0; z < CHUNK; z++) {
         const wx = cx * CHUNK + x, wz = cz * CHUNK + z;
+        const biome = biomes ? this._biomeAt(wx, wz) : null;
         let height;
         if (this.type === 'simple') {
           // 123: simple, smooth rolling terrain (still has everything else)
@@ -279,11 +292,15 @@ class World {
           let block = BLOCK.STONE;
           if (y === 0) block = BLOCK.BEDROCK;
           else if (y === height) {
-            if (height < SEA_LEVEL + 1) block = BLOCK.SAND;
-            else if (height > SEA_LEVEL + 18) block = BLOCK.SNOW;
+            if (height < SEA_LEVEL + 1) block = BLOCK.SAND;            // beaches
+            else if (biome === 'desert') block = BLOCK.SAND;
+            else if (biome === 'snowy') block = BLOCK.SNOW;
+            else if (height > SEA_LEVEL + 18) block = BLOCK.SNOW;       // snowy peaks
             else block = BLOCK.GRASS;
           } else if (y > height - 4) {
-            block = (height < SEA_LEVEL + 1) ? BLOCK.SAND : BLOCK.DIRT;
+            block = (height < SEA_LEVEL + 1) ? BLOCK.SAND
+              : (biome === 'desert') ? (y > height - 2 ? BLOCK.SAND : BLOCK.SANDSTONE)
+              : BLOCK.DIRT;
           } else {
             // ores embedded in stone, rarer/deeper for valuable ones
             const r = rnd();
@@ -307,12 +324,28 @@ class World {
         // water fill
         for (let y = height + 1; y <= SEA_LEVEL; y++) this._set(ch, x, y, z, BLOCK.WATER);
 
-        // foliage / trees on grassy land
-        const isGrassTop = height >= SEA_LEVEL + 1 && height <= SEA_LEVEL + 17;
-        if (isGrassTop && x >= 2 && x <= 13 && z >= 2 && z <= 13 && rnd() < 0.02) {
-          this._tree(ch, x, height + 1, z, rnd);
-        } else if (isGrassTop && rnd() < 0.18) {
-          this._set(ch, x, height + 1, z, BLOCK.TALL_GRASS);   // seeds source
+        // foliage / trees on land
+        const isLand = height >= SEA_LEVEL + 1 && height <= SEA_LEVEL + 17;
+        const inB = x >= 2 && x <= 13 && z >= 2 && z <= 13;
+        if (biomes && isLand) {
+          if (biome === 'desert') {
+            if (inB && rnd() < 0.014) { const ch2 = 1 + (rnd() * 3 | 0); for (let i = 0; i < ch2; i++) this._set(ch, x, height + 1 + i, z, BLOCK.CACTUS); }
+            else if (rnd() < 0.025) this._set(ch, x, height + 1, z, BLOCK.DEAD_BUSH);
+          } else if (biome === 'snowy') {
+            if (inB && rnd() < 0.03) this._tree(ch, x, height + 1, z, rnd);
+          } else if (biome === 'forest') {
+            if (inB && rnd() < 0.085) this._tree(ch, x, height + 1, z, rnd);
+            else if (rnd() < 0.22) this._set(ch, x, height + 1, z, BLOCK.TALL_GRASS);
+            else if (rnd() < 0.05) this._set(ch, x, height + 1, z, rnd() < 0.5 ? BLOCK.FLOWER_RED : BLOCK.FLOWER_YELLOW);
+          } else {   // plains
+            if (inB && rnd() < 0.012) this._tree(ch, x, height + 1, z, rnd);
+            else if (rnd() < 0.16) this._set(ch, x, height + 1, z, BLOCK.TALL_GRASS);
+            else if (rnd() < 0.06) this._set(ch, x, height + 1, z, rnd() < 0.5 ? BLOCK.FLOWER_RED : BLOCK.FLOWER_YELLOW);
+          }
+        } else {
+          const isGrassTop = height >= SEA_LEVEL + 1 && height <= SEA_LEVEL + 17;
+          if (isGrassTop && inB && rnd() < 0.02) this._tree(ch, x, height + 1, z, rnd);
+          else if (isGrassTop && rnd() < 0.18) this._set(ch, x, height + 1, z, BLOCK.TALL_GRASS);
         }
       }
     }

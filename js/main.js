@@ -1125,6 +1125,8 @@ function doBreakSurvival(hit) {
   world.setBlock(hit.x, hit.y, hit.z, BLOCK.AIR);
   if (hit.block === BLOCK.SAPLING) { removeSapling(hit.x, hit.y, hit.z); give(BLOCK.SAPLING, 1); return; }
   if (hit.block === BLOCK.TALL_GRASS) { if (Math.random() < 0.5) give(ITEM.WHEAT_SEEDS, 1); return; }
+  if (hit.block === BLOCK.FLOWER_RED || hit.block === BLOCK.FLOWER_YELLOW) { give(hit.block, 1); return; }
+  if (hit.block === BLOCK.DEAD_BUSH) { if (Math.random() < 0.3) give(ITEM.STICK, 1); return; }
   if (BLOCK_INFO[hit.block].crop) { harvestCrop(hit.block, hit.x, hit.y, hit.z); return; }
   if (hit.block === BLOCK.CHEST) dumpChest(hit.x, hit.y, hit.z);
   let drop = blockDrop(hit.block, tool);

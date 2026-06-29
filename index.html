@@ -15,7 +15,7 @@
     <div class="menu-bg"><span></span><span></span><span></span><span></span><span></span><span></span></div>
     <div class="menu-panel">
       <h1 class="logo">SKY<span>FORGE</span></h1>
-      <p class="tagline">Build · Survive · Explore · Forge a Portal</p>
+      <p class="tagline">Build · Survive · Explore</p>
 
       <div id="worlds-section" class="menu-section hidden">
         <label class="field-label">Your Worlds</label>
@@ -32,10 +32,10 @@
 
       <div class="menu-section">
         <label class="field-label">World Type</label>
-        <div class="btn-group" id="world-group">
-          <button class="opt selected" data-world="regular">🌳 Regular</button>
-          <button class="opt" data-world="flat">▦ Flat</button>
-          <button class="opt" data-world="skyblock">☁️ Skyblock</button>
+        <div id="world-group">
+          <button class="opt selected" data-world="regular"><span class="opt-ic">🌳</span><span class="opt-t">Regular</span><span class="opt-s">Biomes &amp; caves</span></button>
+          <button class="opt" data-world="flat"><span class="opt-ic">▦</span><span class="opt-t">Flat</span><span class="opt-s">Creative canvas</span></button>
+          <button class="opt" data-world="skyblock"><span class="opt-ic">☁️</span><span class="opt-t">Skyblock</span><span class="opt-s">Island survival</span></button>
         </div>
       </div>
 
@@ -60,6 +60,7 @@
           <p><b>Inventory &amp; crafting:</b> press <b>E</b> (or tap 🎒). The inventory has a <b>2×2</b> grid; a <b>crafting table</b> opens the full <b>3×3</b>. Tap an item, then a grid cell, then the result.</p>
           <p>🪣 <b>Buckets</b> (3 iron) scoop &amp; pour water/lava — put lava + water a block apart for a <b>cobblestone generator</b>. 🐑 <b>Sheep</b> drop wool for beds.</p>
           <p>🔴 <b>Redstone:</b> dust, blocks, levers, buttons, torches (NOT gates), lamps, repeaters, comparators (use to toggle subtract) and pistons — enough to build logic gates, adders and full calculators. Flip levers / press buttons / set comparators with the place action.</p>
+          <p>🌍 <b>Biomes:</b> new <b>Regular</b> worlds have <b>forests</b> &amp; <b>plains</b> (trees, flowers, tall grass), sandy <b>deserts</b> (cacti, dead bushes, sandstone) and <b>snowy</b> lands — go exploring.</p>
           <p>🌾 <b>Farming:</b> craft a hoe, till grass/dirt (it's <b>wet</b> &amp; faster near water), plant <b>seeds from tall grass</b>, let them grow gold, harvest → bread. Eat food to refill hunger.</p>
           <p>🛏️ <b>Beds:</b> craft a bed, sleep at night to skip to morning and set your respawn point. 🌳 Plant <b>saplings</b> to grow trees.</p>
           <p><b>Night is dark and dangerous</b> — <b>zombies, skeletons (they shoot arrows), spiders</b> and <b>creepers</b> (they hiss and explode!) spawn after dusk. Craft <b>torches</b> (coal + stick) for light, a <b>sword</b> to fight, and a <b>bow</b> (string + sticks) with <b>arrows</b> (flint + stick + feather) for ranged. <b>Sprint</b> with Ctrl / R (or push the stick to the edge).</p>
@@ -77,7 +78,7 @@
 
       <p class="hint" id="device-hint"></p>
     </div>
-    <div class="credits">A tiny Minecraft-like sandbox</div>
+    <div class="credits">A voxel sandbox · biomes · redstone · Create · the End</div>
   </div>
 
   <!-- ===================== LOADING ===================== -->
