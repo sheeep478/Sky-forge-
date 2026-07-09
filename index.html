@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>POTASSIUM PANIC — Frisk vs. The Cheeseburger</title>
+<style>
+  :root{
+    --bg:#12121c; --panel:#1d1d2e; --panel2:#26263c; --ink:#eaeaf2;
+    --accent:#ffd23f; --accent2:#7be07b; --danger:#ff6b6b; --blue:#6bb7ff;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Courier New", ui-monospace, monospace;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .screen{
+    display:none; flex-direction:column; align-items:center; gap:14px;
+    width:min(96vw,980px); max-height:96vh; overflow-y:auto; padding:18px;
+  }
+  .screen.active{display:flex;}
+  h1{
+    font-size:clamp(26px,5vw,46px); letter-spacing:2px; color:var(--accent);
+    text-shadow:3px 3px 0 #7a2a2a; text-align:center;
+  }
+  h2{color:var(--accent); letter-spacing:1px;}
+  .sub{color:#aab; text-align:center; line-height:1.5;}
+  button{
+    font-family:inherit; font-size:17px; font-weight:bold; letter-spacing:1px;
+    background:var(--panel2); color:var(--ink); border:3px solid #444a66;
+    padding:10px 22px; cursor:pointer; border-radius:6px; min-width:220px;
+  }
+  button:hover{border-color:var(--accent); color:var(--accent); transform:translateY(-1px);}
+  button.small{min-width:0; font-size:14px; padding:6px 12px;}
+  button.danger:hover{border-color:var(--danger); color:var(--danger);}
+  .row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center;}
+  .card{
+    background:var(--panel); border:3px solid #33334d; border-radius:10px;
+    padding:14px 18px; width:100%;
+  }
+  .diffbtn{display:flex; flex-direction:column; gap:4px; min-width:280px; text-align:left;}
+  .diffbtn small{font-weight:normal; color:#9aa; font-size:12px; letter-spacing:0;}
+  .diffbtn .best{color:var(--accent2); font-size:12px;}
+  label.slider{display:flex; align-items:center; gap:10px; justify-content:space-between; padding:4px 0; font-size:15px;}
+  label.slider span.val{color:var(--accent); min-width:64px; text-align:right;}
+  input[type=range]{width:46%; accent-color:var(--accent);}
+  input[type=text],input[type=number]{
+    font-family:inherit; background:#111; color:var(--ink);
+    border:2px solid #444a66; padding:6px 8px; border-radius:4px;
+  }
+  input[type=number]{width:70px;}
+  /* ---- game ---- */
+  #game{padding:0; gap:0; position:relative; overflow:hidden;}
+  #cv, #ecv{
+    background:#000; image-rendering:pixelated;
+    max-width:96vw; max-height:90vh; border:3px solid #33334d; border-radius:6px;
+    touch-action:none;
+  }
+  #hud{
+    position:absolute; top:10px; left:12px; right:12px; display:flex;
+    justify-content:space-between; pointer-events:none; font-weight:bold;
+    text-shadow:2px 2px 0 #000; font-size:16px; gap:8px; flex-wrap:wrap;
+  }
+  .overlay{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(6,6,12,.78); z-index:5; flex-direction:column; gap:14px; text-align:center;
+  }
+  .overlay.active{display:flex;}
+  .overlay .big{font-size:clamp(28px,6vw,52px); font-weight:bold; letter-spacing:2px;}
+  /* ---- editor ---- */
+  #editor{width:min(98vw,1200px);}
+  #edwrap{display:flex; gap:12px; width:100%; align-items:flex-start; flex-wrap:wrap;}
+  #edside{width:250px; display:flex; flex-direction:column; gap:8px;}
+  .pal{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
+  .pal button{min-width:0; font-size:13px; padding:8px 4px;}
+  .pal button.sel{border-color:var(--accent); color:var(--accent); background:#33324a;}
+  #maplist{display:flex; flex-direction:column; gap:6px; max-height:150px; overflow-y:auto;}
+  #maplist .mrow{display:flex; gap:4px;}
+  #maplist .mrow button{flex:1; min-width:0; font-size:12px; padding:5px;}
+  .hint{font-size:12px; color:#889;}
+  kbd{background:#333; border:1px solid #555; border-radius:4px; padding:1px 6px; font-size:13px;}
+  #stick{
+    position:absolute; bottom:18px; left:18px; width:110px; height:110px; border-radius:50%;
+    border:3px solid rgba(255,255,255,.35); display:none; z-index:4;
+  }
+  #stickKnob{
+    position:absolute; width:44px; height:44px; border-radius:50%;
+    background:rgba(255,255,255,.45); left:33px; top:33px;
+  }
+  #sprintBtn{
+    position:absolute; bottom:28px; right:22px; width:84px; height:84px; border-radius:50%;
+    border:3px solid rgba(255,210,63,.6); color:var(--accent); background:rgba(40,40,20,.5);
+    display:none; z-index:4; min-width:0; font-size:13px;
+  }
+  .touch #stick,.touch #sprintBtn{display:block;}
+  ::-webkit-scrollbar{width:10px;} ::-webkit-scrollbar-thumb{background:#3a3a55; border-radius:5px;}
+</style>
+</head>
+<body>
+
+<!-- ============ MAIN MENU ============ -->
+<div class="screen active" id="menu">
+  <h1>🍔 POTASSIUM PANIC 🍌</h1>
+  <p class="sub">You are <b>FRISK</b>. A sentient cheeseburger hungers for you.<br>
+  Raid every <b>SOUP STORE</b> for its one precious banana. Collect all the potassium. Don't get eaten.</p>
+  <button onclick="UI.show('difficulty')">▶ PLAY</button>
+  <button onclick="Editor.open()">🛠 MAP MAKER</button>
+  <button onclick="UI.show('help')">❓ HOW TO PLAY</button>
+  <p class="hint">a Sky-forge production · runs entirely in your browser</p>
+</div>
+
+<!-- ============ DIFFICULTY ============ -->
+<div class="screen" id="difficulty">
+  <h2>CHOOSE YOUR SUFFERING</h2>
+  <div class="row" id="presetBtns"></div>
+  <button onclick="UI.show('custom')">⚙ CUSTOM GAME MODE</button>
+  <button class="small" onclick="UI.show('menu')">← back</button>
+</div>
+
+<!-- ============ CUSTOM ============ -->
+<div class="screen" id="custom">
+  <h2>⚙ CUSTOM GAME MODE</h2>
+  <div class="card" id="customSliders"></div>
+  <div class="row">
+    <button onclick="Game.startPreset(Custom.build())">▶ START CUSTOM GAME</button>
+    <button class="small" onclick="UI.show('difficulty')">← back</button>
+  </div>
+</div>
+
+<!-- ============ HELP ============ -->
+<div class="screen" id="help">
+  <h2>❓ HOW TO PLAY</h2>
+  <div class="card" style="line-height:1.9">
+    <b>Goal:</b> walk into every 🍲 soup store — each one stocks exactly <b>one banana</b>.
+    Collect them all to win. The 🍔 cheeseburger(s) will chase you the whole time; stores are
+    burger-proof, but they love to camp the doorway.<br><br>
+    <kbd>WASD</kbd>/<kbd>←↑↓→</kbd> move &nbsp; <kbd>SHIFT</kbd> sprint (uses stamina) &nbsp;
+    <kbd>P</kbd>/<kbd>ESC</kbd> pause<br><br>
+    <b>Terrain:</b> roads make you faster · walls, trees &amp; water block you ·
+    on Spicy+ the burger drips <b>mustard</b> that slows you.<br>
+    <b>Power-ups:</b> ⚡ speed boost · ❄ freezes burgers · 👻 burgers lose track of you.<br>
+    <b>Mobile:</b> touch joystick appears automatically. Frisk always starts on the <b>left</b>
+    side of the map; the burger lurks on the right.
+  </div>
+  <button class="small" onclick="UI.show('menu')">← back</button>
+</div>
+
+<!-- ============ EDITOR ============ -->
+<div class="screen" id="editor">
+  <h2>🛠 MAP MAKER</h2>
+  <div id="edwrap">
+    <div id="edside">
+      <div class="card">
+        <b>Paint tool</b>
+        <div class="pal" id="palette"></div>
+        <p class="hint" style="margin-top:6px">Left-drag: paint · Right-drag: erase to grass</p>
+      </div>
+      <div class="card">
+        <b>Map size</b>
+        <div class="row" style="justify-content:flex-start; margin-top:6px">
+          W <input type="number" id="edW" min="16" max="70" value="46">
+          H <input type="number" id="edH" min="12" max="46" value="30">
+          <button class="small" onclick="Editor.resize()">apply</button>
+        </div>
+        <div class="row" style="justify-content:flex-start; margin-top:6px">
+          <button class="small" onclick="Editor.border()">wall border</button>
+          <button class="small danger" onclick="Editor.clear()">clear all</button>
+        </div>
+      </div>
+      <div class="card">
+        <b>Save / load</b>
+        <div class="row" style="justify-content:flex-start; margin-top:6px">
+          <input type="text" id="mapName" placeholder="map name" style="width:120px">
+          <button class="small" onclick="Editor.save()">save</button>
+        </div>
+        <div id="maplist"></div>
+        <div class="row" style="justify-content:flex-start; margin-top:6px">
+          <button class="small" onclick="Editor.exportMap()">export</button>
+          <button class="small" onclick="Editor.importMap()">import</button>
+        </div>
+      </div>
+      <button onclick="Editor.play()">▶ PLAYTEST MAP</button>
+      <button class="small" onclick="UI.show('menu')">← back to menu</button>
+    </div>
+    <div style="flex:1; min-width:300px">
+      <canvas id="ecv" width="920" height="600"></canvas>
+      <p class="hint">A map needs: 1 Frisk spawn 🧍 · at least 1 soup store 🍲 · at least 1 burger spawn 🍔.
+      Playtest uses the difficulty you last picked (default Normal), but burger count comes from your 🍔 markers.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div class="screen" id="game">
+  <canvas id="cv" width="960" height="600"></canvas>
+  <div id="hud"></div>
+  <div id="stick"><div id="stickKnob"></div></div>
+  <button id="sprintBtn">SPRINT</button>
+
+  <div class="overlay" id="storePop">
+    <div class="big" style="color:var(--accent)" id="storeName"></div>
+    <div style="font-size:20px" id="storeText"></div>
+    <div class="hint">press any key / tap to keep running</div>
+  </div>
+
+  <div class="overlay" id="pausePop">
+    <div class="big">⏸ PAUSED</div>
+    <button onclick="Game.togglePause()">RESUME</button>
+    <button class="danger" onclick="Game.quit()">QUIT TO MENU</button>
+  </div>
+
+  <div class="overlay" id="endPop">
+    <div class="big" id="endTitle"></div>
+    <div style="font-size:19px; line-height:1.7" id="endText"></div>
+    <button onclick="Game.restart()">↻ RETRY</button>
+    <button onclick="Game.quit()">MENU</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   POTASSIUM PANIC — a top-down banana-heist chase game.
+   Tiles: 0 grass · 1 wall · 2 road · 3 soup store · 4 tree · 5 water
+   ===================================================================== */
+const TILE = 32;
+const T = {GRASS:0, WALL:1, ROAD:2, STORE:3, TREE:4, WATER:5};
+const SOLID_ALL   = new Set([T.WALL, T.TREE, T.WATER]);
+const STORE_NAMES = ["Broth Brothers","Soup-Or-Market","The Ladle Local","Chowder Chalet",
+  "Bisque Boutique","Stew Depot","Gazpacho Grotto","Minestrone Mart","Ramen Ranch",
+  "Consommé Corner","Pho Palace","The Souper Store"];
+const LS_MAPS = "skyforge_pp_maps", LS_BEST = "skyforge_pp_best_";
+
+/* ---------------- UI helpers ---------------- */
+const UI = {
+  show(id){
+    document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("active", s.id===id));
+    if(id!=="game") Game.running=false;
+  },
+  ov(id,on){ document.getElementById(id).classList.toggle("active",!!on); }
+};
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const fmtTime = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+const rnd = (a,b)=>a+Math.random()*(b-a);
+const ri  = (a,b)=>Math.floor(rnd(a,b+1));
+
+/* ---------------- sound (tiny WebAudio bleeps) ---------------- */
+const Snd = {
+  ctx:null,
+  init(){ if(!this.ctx){ try{ this.ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } },
+  tone(f, dur=.12, type="square", vol=.08, when=0){
+    if(!this.ctx) return;
+    const t=this.ctx.currentTime+when, o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type=type; o.frequency.value=f; g.gain.setValueAtTime(vol,t);
+    g.gain.exponentialRampToValueAtTime(.001,t+dur);
+    o.connect(g).connect(this.ctx.destination); o.start(t); o.stop(t+dur+.02);
+  },
+  banana(){ this.tone(520,.1); this.tone(660,.1,"square",.08,.09); this.tone(880,.16,"square",.08,.18); },
+  power(){ this.tone(330,.08,"sawtooth"); this.tone(495,.08,"sawtooth",.07,.07); this.tone(742,.14,"sawtooth",.07,.14); },
+  chomp(){ this.tone(180,.25,"sawtooth",.12); this.tone(90,.4,"sawtooth",.12,.1); },
+  win(){ [523,659,784,1047].forEach((f,i)=>this.tone(f,.22,"triangle",.1,i*.14)); },
+  tick(){ this.tone(1200,.03,"square",.03); }
+};
+window.addEventListener("pointerdown",()=>Snd.init(),{once:false});
+window.addEventListener("keydown",()=>Snd.init(),{once:true});
+
+/* ---------------- difficulty presets ---------------- */
+const PRESETS = [
+  {key:"chill",     label:"🥱 CHILL",     desc:"1 slow burger · 5 stores · no mustard",
+   burgers:1, burgerSpeed:72,  stores:5,  playerSpeed:130, stamina:160, mustard:false, powerEvery:9},
+  {key:"normal",    label:"🙂 NORMAL",    desc:"1 hungry burger · 6 stores",
+   burgers:1, burgerSpeed:96,  stores:6,  playerSpeed:125, stamina:120, mustard:false, powerEvery:11},
+  {key:"spicy",     label:"🌶 SPICY",     desc:"2 burgers · 8 stores · mustard trails",
+   burgers:2, burgerSpeed:106, stores:8,  playerSpeed:125, stamina:110, mustard:true,  powerEvery:13},
+  {key:"nightmare", label:"💀 NIGHTMARE", desc:"3 fast burgers · 10 stores · maximum mustard",
+   burgers:3, burgerSpeed:120, stores:10, playerSpeed:125, stamina:100, mustard:true,  powerEvery:16},
+];
+function bestGet(key){ const v=localStorage.getItem(LS_BEST+key); return v?+v:null; }
+function bestSet(key,t){ const b=bestGet(key); if(b===null||t<b) localStorage.setItem(LS_BEST+key,t); }
+
+function renderPresets(){
+  $("presetBtns").innerHTML="";
+  PRESETS.forEach(p=>{
+    const b=document.createElement("button");
+    b.className="diffbtn";
+    const best=bestGet(p.key);
+    b.innerHTML=`${p.label}<small>${p.desc}</small><span class="best">${best!==null?"best time: "+fmtTime(best):"no wins yet"}</span>`;
+    b.onclick=()=>Game.startPreset({...p});
+    $("presetBtns").appendChild(b);
+  });
+}
+
+/* ---------------- custom mode ---------------- */
+const Custom = {
+  fields:[
+    {id:"burgers",     name:"🍔 Burgers",          min:1,  max:5,   val:1,   fmt:v=>v},
+    {id:"burgerSpeed", name:"🍔 Burger speed",      min:50, max:190, val:96,  fmt:v=>v},
+    {id:"stores",      name:"🍲 Soup stores",       min:3,  max:12,  val:6,   fmt:v=>v},
+    {id:"playerSpeed", name:"🧍 Frisk speed",       min:90, max:180, val:125, fmt:v=>v},
+    {id:"stamina",     name:"⚡ Stamina",           min:50, max:250, val:120, fmt:v=>v},
+    {id:"powerEvery",  name:"🎁 Power-up every",    min:5,  max:25,  val:11,  fmt:v=>v+"s"},
+    {id:"mustard",     name:"🟡 Mustard trails",    min:0,  max:1,   val:0,   fmt:v=>v?"ON":"OFF"},
+  ],
+  init(){
+    const box=$("customSliders"); box.innerHTML="";
+    this.fields.forEach(f=>{
+      const l=document.createElement("label"); l.className="slider";
+      l.innerHTML=`<span>${f.name}</span>
+        <input type="range" id="cs_${f.id}" min="${f.min}" max="${f.max}" value="${f.val}">
+        <span class="val" id="cv_${f.id}">${f.fmt(f.val)}</span>`;
+      box.appendChild(l);
+      l.querySelector("input").addEventListener("input",e=>{
+        $("cv_"+f.id).textContent=f.fmt(+e.target.value); Snd.tick();
+      });
+    });
+  },
+  build(){
+    const s={key:"custom", label:"⚙ CUSTOM"};
+    this.fields.forEach(f=> s[f.id]=+$("cs_"+f.id).value);
+    s.mustard = !!s.mustard;
+    return s;
+  }
+};
+
+/* ---------------- map object helpers ---------------- */
+function blankMap(w,h){
+  return {w,h, tiles:new Array(w*h).fill(T.GRASS), spawn:{x:2,y:Math.floor(h/2)}, burgers:[]};
+}
+function mget(m,x,y){ return (x<0||y<0||x>=m.w||y>=m.h)?T.WALL:m.tiles[y*m.w+x]; }
+function mset(m,x,y,v){ if(x>=0&&y>=0&&x<m.w&&y<m.h) m.tiles[y*m.w+x]=v; }
+
+/* procedural map: Frisk spawns LEFT, burgers lurk RIGHT, stores sprinkled about */
+function genMap(storeCount, burgerCount){
+  const w=46,h=30, m=blankMap(w,h);
+  for(let x=0;x<w;x++){ mset(m,x,0,T.WALL); mset(m,x,h-1,T.WALL); }
+  for(let y=0;y<h;y++){ mset(m,0,y,T.WALL); mset(m,w-1,y,T.WALL); }
+  // winding roads (cosmetic + speed boost)
+  for(const ry of [ri(6,10), ri(18,23)]){
+    let y=ry;
+    for(let x=1;x<w-1;x++){ mset(m,x,y,T.ROAD); if(Math.random()<.25) y=clamp(y+ri(-1,1),2,h-3); mset(m,x,y,T.ROAD); }
+  }
+  // obstacle blobs
+  const blob=(t,n,sz)=>{ for(let i=0;i<n;i++){ const cx=ri(3,w-4),cy=ri(3,h-4);
+    for(let j=0;j<sz;j++){ const x=clamp(cx+ri(-1,1),2,w-3), y=clamp(cy+ri(-1,1),2,h-3);
+      if(mget(m,x,y)===T.GRASS) mset(m,x,y,t); } } };
+  blob(T.WALL,26,4); blob(T.TREE,30,2); blob(T.WATER,7,6);
+  // spawn on the LEFT
+  m.spawn={x:2,y:Math.floor(h/2)};
+  for(let dy=0;dy<h;dy++){ const y=clamp(Math.floor(h/2)+((dy%2)?dy:-dy)/2|0,1,h-2);
+    if(!SOLID_ALL.has(mget(m,2,y))){ m.spawn={x:2,y}; break; } }
+  mset(m,m.spawn.x,m.spawn.y,T.GRASS);
+  // stores: right two-thirds, spaced out
+  const stores=[];
+  let guard=0;
+  while(stores.length<storeCount && guard++<4000){
+    const x=ri(Math.floor(w*.3),w-3), y=ri(2,h-3);
+    if(mget(m,x,y)!==T.GRASS) continue;
+    if(stores.some(s=>Math.abs(s.x-x)+Math.abs(s.y-y)<7)) continue;
+    if(Math.abs(x-m.spawn.x)+Math.abs(y-m.spawn.y)<8) continue;
+    mset(m,x,y,T.STORE);
+    // keep the doorway clear
+    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{
+      if(SOLID_ALL.has(mget(m,x+dx,y+dy))) mset(m,x+dx,y+dy,T.GRASS);
+    });
+    stores.push({x,y});
+  }
+  // burgers on the RIGHT
+  m.burgers=[];
+  for(let i=0;i<burgerCount;i++){
+    let x=w-3,y=ri(2,h-3),g=0;
+    while(SOLID_ALL.has(mget(m,x,y))&&g++<200){ x=ri(w-7,w-2); y=ri(2,h-3); }
+    mset(m,x,y,T.GRASS); m.burgers.push({x,y});
+  }
+  carveReachability(m,stores);
+  return m;
+}
+/* make sure every store is reachable from spawn — carve L-paths if not */
+function carveReachability(m,stores){
+  const reach=fieldFrom(m,m.spawn.x,m.spawn.y,false);
+  for(const s of stores){
+    if(reach[s.y*m.w+s.x]>=0) continue;
+    let x=m.spawn.x,y=m.spawn.y;
+    while(x!==s.x){ x+=Math.sign(s.x-x); if(mget(m,x,y)!==T.STORE&&SOLID_ALL.has(mget(m,x,y))) mset(m,x,y,T.GRASS); }
+    while(y!==s.y){ y+=Math.sign(s.y-y); if(mget(m,x,y)!==T.STORE&&SOLID_ALL.has(mget(m,x,y))) mset(m,x,y,T.GRASS); }
+  }
+}
+/* BFS distance field. forBurger=true also treats stores as walls. */
+function fieldFrom(m,sx,sy,forBurger){
+  const f=new Int32Array(m.w*m.h).fill(-1);
+  const q=[[sx,sy]]; f[sy*m.w+sx]=0;
+  while(q.length){
+    const [x,y]=q.shift(), d=f[y*m.w+x];
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx=x+dx,ny=y+dy;
+      if(nx<0||ny<0||nx>=m.w||ny>=m.h) continue;
+      const t=m.tiles[ny*m.w+nx];
+      if(SOLID_ALL.has(t)||(forBurger&&t===T.STORE)) continue;
+      if(f[ny*m.w+nx]===-1){ f[ny*m.w+nx]=d+1; q.push([nx,ny]); }
+    }
+  }
+  return f;
+}
+
+/* ---------------- input ---------------- */
+const Keys={};
+window.addEventListener("keydown",e=>{
+  Keys[e.key.toLowerCase()]=true;
+  if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(e.key.toLowerCase())) e.preventDefault();
+  if(Game.running){
+    if(Game.popup){ if(Game.popupAge>.35) Game.closeStore(); return; }
+    if(e.key==="p"||e.key==="P"||e.key==="Escape") Game.togglePause();
+  }
+});
+window.addEventListener("keyup",e=>Keys[e.key.toLowerCase()]=false);
+
+/* touch joystick */
+const Touch={active:false, dx:0, dy:0, sprint:false};
+(function(){
+  const stick=$("stick"), knob=$("stickKnob");
+  let pid=null, cx=0, cy=0;
+  const isTouch = matchMedia("(pointer:coarse)").matches;
+  if(isTouch) document.body.classList.add("touch");
+  stick.addEventListener("pointerdown",e=>{
+    pid=e.pointerId; const r=stick.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2;
+    stick.setPointerCapture(pid); move(e);
+  });
+  stick.addEventListener("pointermove",e=>{ if(e.pointerId===pid) move(e); });
+  const end=e=>{ if(e.pointerId===pid){ pid=null; Touch.active=false; Touch.dx=Touch.dy=0; knob.style.left="33px"; knob.style.top="33px"; } };
+  stick.addEventListener("pointerup",end); stick.addEventListener("pointercancel",end);
+  function move(e){
+    let dx=e.clientX-cx, dy=e.clientY-cy;
+    const len=Math.hypot(dx,dy)||1, r=Math.min(len,40);
+    dx=dx/len*r; dy=dy/len*r;
+    knob.style.left=(33+dx)+"px"; knob.style.top=(33+dy)+"px";
+    Touch.active=true; Touch.dx=dx/40; Touch.dy=dy/40;
+  }
+  $("sprintBtn").addEventListener("pointerdown",e=>{e.preventDefault(); Touch.sprint=true;});
+  $("sprintBtn").addEventListener("pointerup",()=>Touch.sprint=false);
+  $("sprintBtn").addEventListener("pointercancel",()=>Touch.sprint=false);
+})();
+
+/* =====================================================================
+   GAME
+   ===================================================================== */
+const Game = {
+  running:false, paused:false, popup:null, popupAge:0,
+  cv:null, ctx:null, settings:null, customMap:null,
+
+  startPreset(settings, customMap=null){
+    this.settings=settings; this.customMap=customMap;
+    this.begin();
+  },
+  restart(){ this.begin(); },
+  begin(){
+    const s=this.settings;
+    this.cv=$("cv"); this.ctx=this.cv.getContext("2d");
+    let map;
+    if(this.customMap){
+      map=JSON.parse(JSON.stringify(this.customMap));
+    }else{
+      map=genMap(s.stores, s.burgers);
+    }
+    const stores=[];
+    for(let y=0;y<map.h;y++)for(let x=0;x<map.w;x++)
+      if(mget(map,x,y)===T.STORE) stores.push({x,y,used:false,name:STORE_NAMES[stores.length%STORE_NAMES.length]});
+    // burgers (snap onto walkable ground)
+    const burgers=map.burgers.map(b=>{
+      let {x,y}=b;
+      if(SOLID_ALL.has(mget(map,x,y))||mget(map,x,y)===T.STORE){
+        outer: for(let r=1;r<8;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+          const t=mget(map,x+dx,y+dy);
+          if(!SOLID_ALL.has(t)&&t!==T.STORE){ x+=dx; y+=dy; break outer; }
+        }
+      }
+      return {x:(x+.5)*TILE, y:(y+.5)*TILE, wob:Math.random()*7, wanderT:0, wx:0, wy:0};
+    });
+    this.st={
+      map, stores, burgers,
+      player:{x:(map.spawn.x+.5)*TILE, y:(map.spawn.y+.5)*TILE, stam:s.stamina, face:1, step:0},
+      potassium:0, total:stores.length,
+      time:0, field:null, fieldT:0,
+      freeze:0, boost:0, ghost:0, grace:2.2,
+      powerups:[], powerT:s.powerEvery*0.6, blobs:[], blobT:0, parts:[], shake:0,
+    };
+    this.paused=false; this.popup=null;
+    UI.ov("storePop",false); UI.ov("pausePop",false); UI.ov("endPop",false);
+    UI.show("game");
+    if(!this.running){ this.running=true; this.last=performance.now(); requestAnimationFrame(t=>this.loop(t)); }
+    else this.last=performance.now();
+  },
+  quit(){ this.running=false; UI.show("menu"); renderPresets(); },
+  togglePause(){ if(!this.running||this.popup) return; this.paused=!this.paused; UI.ov("pausePop",this.paused); },
+
+  closeStore(){ this.popup=null; UI.ov("storePop",false); },
+
+  loop(now){
+    if(!this.running) return;
+    const dt=clamp((now-this.last)/1000,0,.05); this.last=now;
+    if(this.popup){ this.popupAge+=dt; }
+    else if(!this.paused && this.st) this.update(dt);
+    if(this.st) this.draw();
+    requestAnimationFrame(t=>this.loop(t));
+  },
+
+  /* ---------- update ---------- */
+  update(dt){
+    const st=this.st, s=this.settings, p=st.player, m=st.map;
+    st.time+=dt; st.grace=Math.max(0,st.grace-dt);
+    st.freeze=Math.max(0,st.freeze-dt); st.boost=Math.max(0,st.boost-dt); st.ghost=Math.max(0,st.ghost-dt);
+    st.shake=Math.max(0,st.shake-dt*3);
+
+    /* --- Frisk movement --- */
+    let dx=(Keys.d||Keys.arrowright?1:0)-(Keys.a||Keys.arrowleft?1:0);
+    let dy=(Keys.s||Keys.arrowdown?1:0)-(Keys.w||Keys.arrowup?1:0);
+    if(Touch.active){ dx=Touch.dx; dy=Touch.dy; }
+    const mag=Math.hypot(dx,dy);
+    if(mag>1){ dx/=mag; dy/=mag; }
+    const sprinting=(Keys.shift||Touch.sprint)&&p.stam>0&&mag>0;
+    if(sprinting) p.stam=Math.max(0,p.stam-30*dt);
+    else p.stam=Math.min(s.stamina,p.stam+18*dt);
+    let spd=s.playerSpeed*(sprinting?1.55:1)*(st.boost>0?1.45:1);
+    const pt=mget(m,p.x/TILE|0,p.y/TILE|0);
+    if(pt===T.ROAD) spd*=1.18;
+    if(st.blobs.some(b=>Math.hypot(b.x-p.x,b.y-p.y)<16)) spd*=.5;
+    if(dx) p.face=Math.sign(dx);
+    if(mag>0) p.step+=dt*10;
+    this.moveCircle(p,dx*spd*dt,dy*spd*dt,10,false);
+
+    /* --- store entry --- */
+    const tx=p.x/TILE|0, ty=p.y/TILE|0;
+    const store=st.stores.find(o=>o.x===tx&&o.y===ty);
+    if(store&&!store.used){
+      store.used=true; st.potassium++;
+      Snd.banana();
+      for(let i=0;i<18;i++) st.parts.push({x:p.x,y:p.y,vx:rnd(-90,90),vy:rnd(-140,-20),life:rnd(.5,1),c:"#ffe135"});
+      this.popup=store; this.popupAge=0;
+      $("storeName").textContent="🍲 "+store.name;
+      $("storeText").innerHTML=`The clerk hands you their <b>only banana</b>.<br>🍌 +1 POTASSIUM &nbsp; (${st.potassium}/${st.total})`;
+      UI.ov("storePop",true);
+      if(st.potassium>=st.total){ this.finish(true); return; }
+    }
+
+    /* --- pathfinding field --- */
+    st.fieldT-=dt;
+    if(!st.field||st.fieldT<=0){ st.field=fieldFrom(m,tx,ty,true); st.fieldT=.22; }
+
+    /* --- burgers --- */
+    for(const b of st.burgers){
+      b.wob+=dt*6;
+      if(st.freeze>0) continue;
+      let vx=0,vy=0;
+      if(st.ghost>0){
+        b.wanderT-=dt;
+        if(b.wanderT<=0){ b.wanderT=rnd(.6,1.4); const a=rnd(0,Math.PI*2); b.wx=Math.cos(a); b.wy=Math.sin(a); }
+        vx=b.wx; vy=b.wy;
+      }else{
+        const bx=b.x/TILE|0, by=b.y/TILE|0;
+        let best=st.field[by*m.w+bx], bdx=0, bdy=0;
+        if(best<0) best=1e9;
+        for(const [ox,oy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const nx=bx+ox, ny=by+oy;
+          if(nx<0||ny<0||nx>=m.w||ny>=m.h) continue;
+          const d=st.field[ny*m.w+nx];
+          if(d>=0&&d<best){ best=d; bdx=ox; bdy=oy; }
+        }
+        if(bdx||bdy){
+          const cx=(bx+bdx+.5)*TILE, cy=(by+bdy+.5)*TILE;
+          const L=Math.hypot(cx-b.x,cy-b.y)||1; vx=(cx-b.x)/L; vy=(cy-b.y)/L;
+        }else{
+          const L=Math.hypot(p.x-b.x,p.y-b.y)||1; vx=(p.x-b.x)/L; vy=(p.y-b.y)/L;
+        }
+      }
+      const bs=s.burgerSpeed*(st.grace>0?.35:1);
+      this.moveCircle(b,vx*bs*dt,vy*bs*dt,12,true);
+      /* mustard drip */
+      if(s.mustard){
+        st.blobT-=dt/st.burgers.length;
+        if(st.blobT<=0){ st.blobT=1.4; st.blobs.push({x:b.x,y:b.y,life:6}); }
+      }
+      /* chomp check */
+      if(Math.hypot(b.x-p.x,b.y-p.y)<20){ this.finish(false); return; }
+      if(Math.hypot(b.x-p.x,b.y-p.y)<70) st.shake=Math.max(st.shake,.35);
+    }
+    st.blobs=st.blobs.filter(b=>(b.life-=dt)>0);
+
+    /* --- power-ups --- */
+    st.powerT-=dt;
+    if(st.powerT<=0&&st.powerups.length<3){
+      st.powerT=s.powerEvery;
+      let g=0;
+      while(g++<300){
+        const x=ri(1,m.w-2), y=ri(1,m.h-2), t=mget(m,x,y);
+        if(!SOLID_ALL.has(t)&&t!==T.STORE){
+          st.powerups.push({x:(x+.5)*TILE,y:(y+.5)*TILE,kind:["boost","freeze","ghost"][ri(0,2)],age:0});
+          break;
+        }
+      }
+    }
+    for(const pu of st.powerups) pu.age+=dt;
+    st.powerups=st.powerups.filter(pu=>{
+      if(Math.hypot(pu.x-p.x,pu.y-p.y)<18){
+        Snd.power();
+        if(pu.kind==="boost") st.boost=5;
+        if(pu.kind==="freeze") st.freeze=4;
+        if(pu.kind==="ghost") st.ghost=4.5;
+        for(let i=0;i<12;i++) st.parts.push({x:pu.x,y:pu.y,vx:rnd(-80,80),vy:rnd(-80,80),life:.6,c:"#8ff"});
+        return false;
+      }
+      return pu.age<20;
+    });
+
+    /* --- particles --- */
+    for(const q of st.parts){ q.x+=q.vx*dt; q.y+=q.vy*dt; q.vy+=200*dt; q.life-=dt; }
+    st.parts=st.parts.filter(q=>q.life>0);
+  },
+
+  moveCircle(e,dx,dy,r,isBurger){
+    const m=this.st.map;
+    const solid=(px,py)=>{
+      const t=mget(m,px/TILE|0,py/TILE|0);
+      return SOLID_ALL.has(t)||(isBurger&&t===T.STORE);
+    };
+    const hits=(x,y)=> solid(x-r,y-r)||solid(x+r,y-r)||solid(x-r,y+r)||solid(x+r,y+r);
+    const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))/4));
+    for(let i=0;i<steps;i++){
+      const ox=e.x; e.x+=dx/steps; if(hits(e.x,e.y)) e.x=ox;
+      const oy=e.y; e.y+=dy/steps; if(hits(e.x,e.y)) e.y=oy;
+    }
+  },
+
+  finish(won){
+    const st=this.st, key=this.settings.key;
+    if(won){
+      Snd.win();
+      if(!this.customMap) bestSet(key,st.time);
+      $("endTitle").textContent="🍌 FULL POTASSIUM 🍌";
+      $("endTitle").style.color="var(--accent2)";
+      $("endText").innerHTML=`Frisk secured all <b>${st.total}</b> bananas in <b>${fmtTime(st.time)}</b>!<br>`+
+        `The cheeseburger returns to the condiment shadows... for now.`+
+        (!this.customMap&&bestGet(key)===Math.min(bestGet(key)??1e9,st.time)?`<br><span style="color:var(--accent)">★ personal best on ${this.settings.label} ★</span>`:"");
+    }else{
+      Snd.chomp(); st.shake=1;
+      $("endTitle").textContent="🍔 FRISKBURGER 🍔";
+      $("endTitle").style.color="var(--danger)";
+      $("endText").innerHTML=`The cheeseburger caught Frisk with ${st.potassium}/${st.total} bananas.<br>`+
+        `Survived <b>${fmtTime(st.time)}</b>. You are now part of the value meal.`;
+    }
+    this.popup=null; UI.ov("storePop",false);
+    UI.ov("endPop",true);
+    this.stEnded=true; this.paused=true;
+  },
+
+  /* ---------- draw ---------- */
+  draw(){
+    const st=this.st, c=this.ctx, m=st.map, p=st.player;
+    const W=this.cv.width, H=this.cv.height;
+    let camx=clamp(p.x-W/2, 0, Math.max(0,m.w*TILE-W));
+    let camy=clamp(p.y-H/2, 0, Math.max(0,m.h*TILE-H));
+    if(st.shake>0){ camx+=rnd(-1,1)*st.shake*6; camy+=rnd(-1,1)*st.shake*6; }
+    c.save(); c.clearRect(0,0,W,H); c.translate(-camx,-camy);
+
+    const x0=Math.max(0,camx/TILE|0), y0=Math.max(0,camy/TILE|0);
+    const x1=Math.min(m.w-1,(camx+W)/TILE+1|0), y1=Math.min(m.h-1,(camy+H)/TILE+1|0);
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)
+      drawTile(c,m,x,y,st.time,st.stores);
+
+    /* mustard */
+    for(const b of st.blobs){
+      c.globalAlpha=clamp(b.life/2,0,1)*.85;
+      c.fillStyle="#e6c619";
+      c.beginPath(); c.ellipse(b.x,b.y,11,7,0,0,7); c.fill();
+      c.globalAlpha=1;
+    }
+    /* power-ups */
+    for(const pu of st.powerups){
+      const bob=Math.sin(pu.age*4)*4;
+      c.font="24px serif"; c.textAlign="center"; c.textBaseline="middle";
+      c.fillText({boost:"⚡",freeze:"❄️",ghost:"👻"}[pu.kind], pu.x, pu.y+bob);
+      if(pu.age>16&&Math.floor(pu.age*6)%2) c.globalAlpha=1; // (blink handled by skip below)
+      if(pu.age>16&&Math.floor(pu.age*6)%2===0){} // subtle: no-op keeps steady draw
+    }
+    /* Frisk */
+    drawFrisk(c,p,st);
+    /* burgers */
+    for(const b of st.burgers) drawBurger(c,b,st);
+    /* particles */
+    for(const q of st.parts){ c.globalAlpha=clamp(q.life,0,1); c.fillStyle=q.c; c.fillRect(q.x-2,q.y-2,4,4); }
+    c.globalAlpha=1;
+    c.restore();
+
+    /* grace-period banner */
+    if(st.grace>0&&!this.stEnded){
+      c.fillStyle="rgba(0,0,0,.55)"; c.fillRect(W/2-190,H-52,380,34);
+      c.fillStyle="#ffd23f"; c.font="bold 17px monospace"; c.textAlign="center"; c.textBaseline="middle";
+      c.fillText("RUN! The burger wakes in "+st.grace.toFixed(1)+"s", W/2, H-35);
+    }
+
+    drawMinimap(c,st,W);
+    this.hud();
+  },
+
+  hud(){
+    const st=this.st, s=this.settings;
+    const fx=[];
+    if(st.boost>0) fx.push("⚡"+st.boost.toFixed(0));
+    if(st.freeze>0) fx.push("❄"+st.freeze.toFixed(0));
+    if(st.ghost>0) fx.push("👻"+st.ghost.toFixed(0));
+    const stamPct=Math.round(st.player.stam/s.stamina*100);
+    $("hud").innerHTML=
+      `<span>🍌 ${st.potassium}/${st.total} &nbsp; ⏱ ${fmtTime(st.time)} &nbsp; ${fx.join(" ")}</span>`+
+      `<span style="margin-right:130px">${s.label} &nbsp; STAMINA <span style="color:${stamPct>30?"#7be07b":"#ff6b6b"}">${"█".repeat(Math.ceil(stamPct/10)).padEnd(10,"░")}</span></span>`;
+  }
+};
+/* reset ended flag on (re)begin */
+const _begin=Game.begin.bind(Game);
+Game.begin=function(){ this.stEnded=false; _begin(); };
+
+/* ---------------- drawing helpers ---------------- */
+function drawTile(c,m,x,y,time,stores){
+  const t=mget(m,x,y), px=x*TILE, py=y*TILE;
+  switch(t){
+    case T.GRASS:
+      c.fillStyle=((x+y)&1)?"#3e7d3a":"#437f40"; c.fillRect(px,py,TILE,TILE);
+      if((x*7+y*13)%11===0){ c.fillStyle="#4f9a4a"; c.fillRect(px+8,py+10,3,3); c.fillRect(px+20,py+22,3,3); }
+      break;
+    case T.ROAD:
+      c.fillStyle="#8a7a5c"; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle="#79694d"; c.fillRect(px+((x*5+y*3)%20),py+((x*3+y*7)%20),5,4);
+      break;
+    case T.WALL:
+      c.fillStyle="#5c5c74"; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle="#6d6d88"; c.fillRect(px+1,py+1,TILE-2,14);
+      c.fillStyle="#4a4a60"; c.fillRect(px,py+16,TILE,2);
+      break;
+    case T.TREE:
+      c.fillStyle=((x+y)&1)?"#3e7d3a":"#437f40"; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle="#6b4a2a"; c.fillRect(px+13,py+18,6,10);
+      c.fillStyle="#2c6e2c"; c.beginPath(); c.arc(px+16,py+12,11,0,7); c.fill();
+      c.fillStyle="#388a38"; c.beginPath(); c.arc(px+12,py+9,6,0,7); c.fill();
+      break;
+    case T.WATER:{
+      c.fillStyle="#2b5f9e"; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle="#3a74bb";
+      const off=Math.sin(time*2+x+y)*3;
+      c.fillRect(px+4,py+8+off,12,3); c.fillRect(px+16,py+20-off,12,3);
+      break;
+    }
+    case T.STORE:{
+      const used=stores&&stores.some(s=>s.x===x&&s.y===y&&s.used);
+      c.fillStyle=((x+y)&1)?"#3e7d3a":"#437f40"; c.fillRect(px,py,TILE,TILE);
+      c.fillStyle=used?"#6e6e6e":"#b0503c"; c.fillRect(px+2,py+8,TILE-4,TILE-10); // body
+      c.fillStyle=used?"#8a8a8a":"#e0e0e0";                                       // awning
+      for(let i=0;i<4;i++){ c.fillStyle=(i&1)?(used?"#777":"#cc4444"):(used?"#999":"#eee"); c.fillRect(px+2+i*7,py+4,7,6); }
+      c.fillStyle="#2a1a12"; c.fillRect(px+12,py+18,8,12);                        // door
+      c.font="11px serif"; c.textAlign="center"; c.textBaseline="middle";
+      c.fillText(used?"✖":"🍲", px+TILE/2, py+2);
+      break;
+    }
+  }
+}
+function drawFrisk(c,p,st){
+  const bob=Math.sin(p.step)*1.5;
+  const x=p.x, y=p.y+bob;
+  c.save(); c.translate(x,y);
+  if(st.ghost>0) c.globalAlpha=.5;
+  if(p.face<0) c.scale(-1,1);
+  // legs: blue shorts, skin, brown boots
+  const leg=Math.sin(p.step*2)*3;
+  c.fillStyle="#2e4a9e"; c.fillRect(-6,5,5,5); c.fillRect(1,5,5,5);
+  c.fillStyle="#e8b98a"; c.fillRect(-6,9+leg,5,3); c.fillRect(1,9-leg,5,3);
+  c.fillStyle="#6b4a2a"; c.fillRect(-7,12+leg,7,4); c.fillRect(0,12-leg,7,4);
+  // iconic blue shirt w/ pink stripes
+  c.fillStyle="#4a5fd0"; c.fillRect(-8,-6,16,13);
+  c.fillStyle="#d0559a"; c.fillRect(-8,-2,16,3); c.fillRect(-8,4,16,3);
+  // arms
+  c.fillStyle="#4a5fd0"; c.fillRect(-11,-5,3,6); c.fillRect(8,-5,3,6);
+  c.fillStyle="#e8b98a"; c.fillRect(-11,1,3,4); c.fillRect(8,1,3,4);
+  // head
+  c.fillStyle="#e8b98a"; c.fillRect(-7,-18,14,13);
+  c.fillStyle="#5a3a1e"; c.fillRect(-8,-21,16,7); c.fillRect(-9,-17,3,8); c.fillRect(6,-17,3,8); // brown bob
+  c.fillStyle="#222"; c.fillRect(-4,-11,3,2); c.fillRect(2,-11,3,2); // determined eyes
+  c.fillStyle="#e88a8a"; c.fillRect(-6,-8,3,2); c.fillRect(4,-8,3,2); // rosy cheeks
+  c.restore();
+  if(st.boost>0){ c.strokeStyle="rgba(255,255,120,.6)"; c.beginPath(); c.arc(x,y-4,18,0,7); c.stroke(); }
+}
+function drawBurger(c,b,st){
+  const x=b.x, y=b.y+Math.sin(b.wob)*2;
+  c.save(); c.translate(x,y);
+  // sprinting legs + flailing arms
+  const run=Math.sin(b.wob*2)*4;
+  c.strokeStyle="#6b4a2a"; c.lineWidth=3; c.lineCap="round";
+  c.beginPath(); c.moveTo(-5,10); c.lineTo(-7,16+run); c.moveTo(5,10); c.lineTo(7,16-run); c.stroke();
+  c.beginPath(); c.moveTo(-13,-2); c.lineTo(-18,-6-run); c.moveTo(13,-2); c.lineTo(18,-6+run); c.stroke();
+  c.font="30px serif"; c.textAlign="center"; c.textBaseline="middle";
+  if(st.freeze>0){ c.filter="hue-rotate(160deg) saturate(2)"; }
+  c.fillText("🍔",0,0);
+  c.filter="none";
+  // big wide eyes + angry brows, like the poster art
+  c.fillStyle="#fff";
+  c.beginPath(); c.arc(-6,-8,3.8,0,7); c.arc(6,-8,3.8,0,7); c.fill();
+  c.fillStyle=st.freeze>0?"#59c":"#111";
+  c.beginPath(); c.arc(-6,-7.4,1.9,0,7); c.arc(6,-7.4,1.9,0,7); c.fill();
+  c.strokeStyle="#521"; c.lineWidth=2;
+  c.beginPath(); c.moveTo(-10,-13); c.lineTo(-3,-11); c.moveTo(10,-13); c.lineTo(3,-11); c.stroke();
+  // hungry open mouth
+  c.fillStyle="#3a0f0f";
+  c.beginPath(); c.ellipse(0,-1,4,2.6,0,0,7); c.fill();
+  c.restore();
+}
+function drawMinimap(c,st,W){
+  const m=st.map, s=Math.min(120/m.w, 84/m.h);
+  const mw=m.w*s, mh=m.h*s, mx=W-mw-10, my=10;
+  c.fillStyle="rgba(0,0,0,.55)"; c.fillRect(mx-3,my-3,mw+6,mh+6);
+  for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++){
+    const t=m.tiles[y*m.w+x];
+    if(t===T.GRASS) continue;
+    c.fillStyle={1:"#666",2:"#8a7a5c",3:"#f33",4:"#295",5:"#36c"}[t]||"#666";
+    if(t===T.STORE){ const u=st.stores.some(o=>o.x===x&&o.y===y&&o.used); c.fillStyle=u?"#555":"#ffd23f"; }
+    c.fillRect(mx+x*s,my+y*s,Math.ceil(s),Math.ceil(s));
+  }
+  c.fillStyle="#fff"; c.fillRect(mx+st.player.x/TILE*s-1.5,my+st.player.y/TILE*s-1.5,3,3);
+  c.fillStyle="#ff5b3b";
+  for(const b of st.burgers) c.fillRect(mx+b.x/TILE*s-1.5,my+b.y/TILE*s-1.5,3,3);
+}
+
+/* pointer dismisses the store popup too */
+$("cv").addEventListener("pointerdown",()=>{ if(Game.popup&&Game.popupAge>.35) Game.closeStore(); });
+$("storePop").addEventListener("pointerdown",()=>{ if(Game.popup&&Game.popupAge>.35) Game.closeStore(); });
+
+/* =====================================================================
+   MAP MAKER
+   ===================================================================== */
+const Editor = {
+  map:null, tool:T.WALL, painting:0,
+  TOOLS:[
+    {v:T.GRASS, n:"🟩 grass"}, {v:T.ROAD, n:"🟫 road"},
+    {v:T.WALL, n:"🧱 wall"},  {v:T.TREE, n:"🌳 tree"},
+    {v:T.WATER,n:"🌊 water"}, {v:T.STORE,n:"🍲 store"},
+    {v:"spawn",n:"🧍 frisk"}, {v:"burger",n:"🍔 burger"},
+  ],
+  open(){
+    if(!this.map){ this.map=genMap(6,1); }
+    UI.show("editor");
+    this.renderPalette(); this.renderList(); this.draw();
+  },
+  renderPalette(){
+    const pal=$("palette"); pal.innerHTML="";
+    this.TOOLS.forEach(t=>{
+      const b=document.createElement("button");
+      b.textContent=t.n; b.className=this.tool===t.v?"sel":"";
+      b.onclick=()=>{ this.tool=t.v; this.renderPalette(); Snd.tick(); };
+      pal.appendChild(b);
+    });
+  },
+  scale(){ const cv=$("ecv"); return Math.min(cv.width/(this.map.w*TILE), cv.height/(this.map.h*TILE)); },
+  tileAt(e){
+    const cv=$("ecv"), r=cv.getBoundingClientRect(), sc=this.scale();
+    const px=(e.clientX-r.left)*(cv.width/r.width), py=(e.clientY-r.top)*(cv.height/r.height);
+    return {x:px/(TILE*sc)|0, y:py/(TILE*sc)|0};
+  },
+  paint(e,erase){
+    const {x,y}=this.tileAt(e), m=this.map;
+    if(x<0||y<0||x>=m.w||y>=m.h) return;
+    if(erase){
+      mset(m,x,y,T.GRASS);
+      m.burgers=m.burgers.filter(b=>b.x!==x||b.y!==y);
+    }else if(this.tool==="spawn"){
+      mset(m,x,y,T.GRASS); m.spawn={x,y};
+    }else if(this.tool==="burger"){
+      mset(m,x,y,T.GRASS);
+      if(!m.burgers.some(b=>b.x===x&&b.y===y)) m.burgers.push({x,y});
+    }else{
+      if(this.tool!==T.GRASS) m.burgers=m.burgers.filter(b=>b.x!==x||b.y!==y);
+      mset(m,x,y,this.tool);
+      if(m.spawn.x===x&&m.spawn.y===y&&SOLID_ALL.has(this.tool)) mset(m,x,y,T.GRASS);
+    }
+    this.draw();
+  },
+  resize(){
+    const w=clamp(+$("edW").value||46,16,70), h=clamp(+$("edH").value||30,12,46);
+    const old=this.map, m=blankMap(w,h);
+    for(let y=0;y<Math.min(h,old.h);y++)for(let x=0;x<Math.min(w,old.w);x++) mset(m,x,y,mget(old,x,y));
+    m.spawn={x:clamp(old.spawn.x,0,w-1),y:clamp(old.spawn.y,0,h-1)};
+    m.burgers=old.burgers.filter(b=>b.x<w&&b.y<h);
+    this.map=m; this.draw();
+  },
+  border(){ const m=this.map;
+    for(let x=0;x<m.w;x++){ mset(m,x,0,T.WALL); mset(m,x,m.h-1,T.WALL); }
+    for(let y=0;y<m.h;y++){ mset(m,0,y,T.WALL); mset(m,m.w-1,y,T.WALL); }
+    this.draw();
+  },
+  clear(){ const {w,h}=this.map; this.map=blankMap(w,h); this.draw(); },
+  validate(){
+    const m=this.map;
+    const stores=m.tiles.filter(t=>t===T.STORE).length;
+    if(stores<1) return "Add at least one 🍲 soup store.";
+    if(m.burgers.length<1) return "Add at least one 🍔 burger spawn.";
+    if(SOLID_ALL.has(mget(m,m.spawn.x,m.spawn.y))) return "Frisk's spawn 🧍 is inside a wall.";
+    const f=fieldFrom(m,m.spawn.x,m.spawn.y,false);
+    for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++)
+      if(mget(m,x,y)===T.STORE&&f[y*m.w+x]<0) return `Store at (${x},${y}) is unreachable from Frisk's spawn.`;
+    return null;
+  },
+  play(){
+    const err=this.validate();
+    if(err){ alert("Can't play yet: "+err); return; }
+    const s = Game.settings && Game.settings.key!=="custom" ? {...Game.settings}
+            : {...PRESETS[1]};
+    s.key="custommap"; s.label="🛠 "+(($("mapName").value||"CUSTOM MAP").toUpperCase());
+    Game.startPreset(s, JSON.parse(JSON.stringify(this.map)));
+  },
+  /* --- persistence --- */
+  allMaps(){ try{ return JSON.parse(localStorage.getItem(LS_MAPS))||{}; }catch(e){ return {}; } },
+  save(){
+    const name=($("mapName").value||"").trim();
+    if(!name){ alert("Give the map a name first."); return; }
+    const maps=this.allMaps(); maps[name]=this.map;
+    localStorage.setItem(LS_MAPS,JSON.stringify(maps));
+    this.renderList(); Snd.power();
+  },
+  renderList(){
+    const box=$("maplist"), maps=this.allMaps(); box.innerHTML="";
+    Object.keys(maps).forEach(name=>{
+      const row=document.createElement("div"); row.className="mrow";
+      const load=document.createElement("button"); load.textContent="📂 "+name;
+      load.onclick=()=>{ this.map=JSON.parse(JSON.stringify(maps[name])); $("mapName").value=name;
+        $("edW").value=this.map.w; $("edH").value=this.map.h; this.draw(); };
+      const del=document.createElement("button"); del.textContent="🗑"; del.className="danger"; del.style.flex="0 0 34px";
+      del.onclick=()=>{ if(confirm("Delete map '"+name+"'?")){ const ms=this.allMaps(); delete ms[name];
+        localStorage.setItem(LS_MAPS,JSON.stringify(ms)); this.renderList(); } };
+      row.append(load,del); box.appendChild(row);
+    });
+    if(!Object.keys(maps).length) box.innerHTML='<span class="hint">no saved maps yet</span>';
+  },
+  exportMap(){
+    const json=JSON.stringify(this.map);
+    if(navigator.clipboard) navigator.clipboard.writeText(json).catch(()=>{});
+    prompt("Map JSON (copied to clipboard) — share it with a friend:", json);
+  },
+  importMap(){
+    const json=prompt("Paste map JSON:");
+    if(!json) return;
+    try{
+      const m=JSON.parse(json);
+      if(typeof m.w!=="number"||typeof m.h!=="number"||!Array.isArray(m.tiles)||m.tiles.length!==m.w*m.h||!m.spawn) throw 0;
+      m.burgers=Array.isArray(m.burgers)?m.burgers:[];
+      m.tiles=m.tiles.map(t=>[0,1,2,3,4,5].includes(t)?t:0);
+      this.map=m; $("edW").value=m.w; $("edH").value=m.h; this.draw();
+    }catch(e){ alert("That didn't look like a valid map."); }
+  },
+  /* --- render --- */
+  draw(){
+    const cv=$("ecv"), c=cv.getContext("2d"), m=this.map, sc=this.scale();
+    c.setTransform(1,0,0,1,0,0); c.fillStyle="#000"; c.fillRect(0,0,cv.width,cv.height);
+    c.scale(sc,sc);
+    for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++) drawTile(c,m,x,y,0,null);
+    // grid
+    c.strokeStyle="rgba(0,0,0,.18)"; c.lineWidth=1/sc;
+    for(let x=0;x<=m.w;x++){ c.beginPath(); c.moveTo(x*TILE,0); c.lineTo(x*TILE,m.h*TILE); c.stroke(); }
+    for(let y=0;y<=m.h;y++){ c.beginPath(); c.moveTo(0,y*TILE); c.lineTo(m.w*TILE,y*TILE); c.stroke(); }
+    // markers
+    c.font="22px serif"; c.textAlign="center"; c.textBaseline="middle";
+    c.fillText("🧍",(m.spawn.x+.5)*TILE,(m.spawn.y+.5)*TILE);
+    for(const b of m.burgers) c.fillText("🍔",(b.x+.5)*TILE,(b.y+.5)*TILE);
+  }
+};
+(function(){
+  const cv=$("ecv");
+  cv.addEventListener("contextmenu",e=>e.preventDefault());
+  cv.addEventListener("pointerdown",e=>{
+    e.preventDefault(); Editor.painting=e.button===2?2:1;
+    cv.setPointerCapture(e.pointerId);
+    Editor.paint(e,Editor.painting===2);
+  });
+  cv.addEventListener("pointermove",e=>{ if(Editor.painting) Editor.paint(e,Editor.painting===2); });
+  const up=()=>Editor.painting=0;
+  cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
+})();
+
+/* ---------------- boot ---------------- */
+renderPresets();
+Custom.init();
+</script>
+</body>
+</html>
