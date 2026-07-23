@@ -9,6 +9,7 @@ from templates.regular   import RegularTemplate
 from templates.flat      import FlatTemplate
 from templates.amplified import AmplifiedTemplate
 from templates.skyblock  import SkyblockTemplate
+from templates.skyscraper import SkyscraperTemplate
 
 # Registry — add new templates here
 TEMPLATES = [
@@ -16,6 +17,7 @@ TEMPLATES = [
     FlatTemplate(),
     AmplifiedTemplate(),
     SkyblockTemplate(),
+    SkyscraperTemplate(),
 ]
 
 GAME_MODES = ["survival", "creative"]
