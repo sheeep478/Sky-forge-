@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Star Scamper 64</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff;
+         text-shadow: 2px 2px 0 #000; user-select: none; }
+  .corner { position: absolute; font-size: 26px; font-weight: bold; }
+  #stars  { top: 14px; left:  18px; color: #ffe14d; }
+  #coins  { top: 48px; left:  18px; color: #ffd24d; }
+  #lives  { top: 14px; right: 18px; color: #ff6b6b; }
+  #health { top: 48px; right: 18px; color: #ff9b9b; letter-spacing: 4px; }
+  #msg { position: absolute; top: 18%; width: 100%; text-align: center;
+         font-size: 30px; font-weight: bold; color: #fff; opacity: 0;
+         transition: opacity .4s; }
+  #screen { position: fixed; inset: 0; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center;
+            background: rgba(10, 8, 40, .85); color: #fff; }
+  #screen h1 { font-size: 64px; margin: 0 0 10px; color: #ffe14d;
+               text-shadow: 4px 4px 0 #b0322a; }
+  #screen p  { font-size: 18px; line-height: 1.7; margin: 6px 0; }
+  #screen .go { margin-top: 22px; font-size: 24px; color: #7dff8a;
+                animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="corner" id="stars">&#9733; 0 / 5</div>
+  <div class="corner" id="coins">&#9679; 0</div>
+  <div class="corner" id="lives">&#10084; x3</div>
+  <div class="corner" id="health"></div>
+  <div id="msg"></div>
+</div>
+<div id="screen">
+  <h1>STAR SCAMPER 64</h1>
+  <p>Collect all 5 Power Stars scattered around Scamper Isle!</p>
+  <p>WASD &mdash; run &nbsp;|&nbsp; SPACE &mdash; jump (press again mid-air to double jump)</p>
+  <p>Q / E or &larr; &rarr; &mdash; rotate camera &nbsp;|&nbsp; stomp enemies from above!</p>
+  <p>Yellow coins heal &bull; 50 coins = extra life &bull; find all 8 RED coins for a star</p>
+  <p class="go">PRESS ENTER TO START</p>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- basic setup ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x7ec8ff);
+scene.fog = new THREE.Fog(0x7ec8ff, 60, 160);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 400);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+scene.add(new THREE.HemisphereLight(0xbfe6ff, 0x3f7d3a, 0.9));
+const sun = new THREE.DirectionalLight(0xfff2cc, 1.2);
+sun.position.set(30, 60, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = sun.shadow.camera.bottom = -70;
+sun.shadow.camera.right = sun.shadow.camera.top = 70;
+sun.shadow.camera.far = 200;
+scene.add(sun);
+
+// ---------- tiny retro synth ----------
+let audio = null;
+function beep(freq, dur = 0.1, type = 'square', vol = 0.15, slide = 0) {
+  if (!audio) return;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = type; o.frequency.value = freq;
+  if (slide) o.frequency.linearRampToValueAtTime(freq + slide, audio.currentTime + dur);
+  g.gain.setValueAtTime(vol, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + dur);
+  o.connect(g).connect(audio.destination);
+  o.start(); o.stop(audio.currentTime + dur);
+}
+const sfx = {
+  jump:  () => beep(300, 0.15, 'square', 0.12, 250),
+  coin:  () => { beep(988, 0.07, 'square', 0.12); setTimeout(() => beep(1319, 0.25, 'square', 0.12), 70); },
+  red:   () => { beep(740, 0.07, 'square', 0.12); setTimeout(() => beep(1109, 0.25, 'square', 0.12), 70); },
+  stomp: () => beep(180, 0.15, 'square', 0.2, -120),
+  hurt:  () => beep(160, 0.3, 'sawtooth', 0.2, -80),
+  star:  () => [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.22, 'square', 0.13), i * 110)),
+  life:  () => [392, 523, 659, 784].forEach((f, i) => setTimeout(() => beep(f, 0.15, 'triangle', 0.18), i * 90)),
+};
+
+// ---------- level building ----------
+const solids = [];   // { mesh, size:Vector3, moving?, prev?:Vector3 }
+function mat(color) { return new THREE.MeshLambertMaterial({ color }); }
+function addBox(x, y, z, w, h, d, color, opts = {}) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+  mesh.position.set(x, y, z);
+  mesh.castShadow = mesh.receiveShadow = true;
+  scene.add(mesh);
+  const s = { mesh, size: new THREE.Vector3(w, h, d), ...opts };
+  if (opts.moving) s.prev = mesh.position.clone();
+  solids.push(s);
+  return s;
+}
+function deco(x, y, z, geo, color, ry = 0) {
+  const m = new THREE.Mesh(geo, mat(color));
+  m.position.set(x, y, z); m.rotation.y = ry;
+  m.castShadow = true;
+  scene.add(m);
+  return m;
+}
+
+// main island (top surface at y = 0)
+addBox(0, -2, 0, 64, 4, 64, 0x58a848);
+addBox(0, -5, 0, 70, 4, 70, 0x8a6a42);           // dirt skirt
+// sea
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(600, 600),
+  new THREE.MeshLambertMaterial({ color: 0x2a6fd6, transparent: true, opacity: 0.9 }));
+sea.rotation.x = -Math.PI / 2; sea.position.y = -7;
+scene.add(sea);
+
+// hill in the NE corner -> star 1
+addBox( 18, 1.0,  -18, 16, 2, 16, 0x63b455);
+addBox( 20, 3.0,  -20, 11, 2, 11, 0x6fc060);
+addBox( 22, 5.0,  -22,  6, 2,  6, 0x7bcc6b);
+
+// tower in the SW -> spiral steps -> star 5
+addBox(-22, 5, 22, 8, 14, 8, 0x9a8f86);
+const steps = [
+  [-14, 1.2, 26], [-10, 2.6, 22], [-12, 4.0, 17], [-17, 5.4, 14],
+  [-23, 6.8, 13], [-28, 8.2, 16], [-29, 9.6, 22], [-26, 11.0, 27], [-22, 12.4, 27],
+];
+for (const [x, y, z] of steps) addBox(x, y, z, 3.4, 0.8, 3.4, 0xb8ada2);
+addBox(-22, 12.2, 22, 7, 0.8, 7, 0xc9beb2);       // tower roof
+
+// moving-platform course east over the sea -> star 2
+addBox(34, 0.5, 0, 6, 1, 8, 0xc9a04e);            // launch pier
+addBox(44, 1.0, 0, 4, 0.8, 4, 0xe0e0e0, { moving: p => p.set(44, 1.0, Math.sin(t * 0.9) * 7) });
+addBox(54, 2.0, 0, 4, 0.8, 4, 0xe0e0e0, { moving: p => p.set(54, 2.0 + Math.sin(t * 1.2) * 2.0, Math.cos(t * 0.7) * 5) });
+addBox(64, 2.5, 0, 8, 1, 8, 0x63b455);            // goal islet
+deco(64, 4.5, -2.5, new THREE.ConeGeometry(1.4, 4, 6), 0x2f7d3c);
+
+// scattered ledges for red coins
+addBox(-24, 1.5, -20, 5, 1, 5, 0x63b455);
+addBox(  0, 2.5, -28, 4, 1, 4, 0x63b455);
+addBox( 10, 1.5,  24, 5, 1, 5, 0x63b455);
+
+// trees + rocks for flavor
+const treeSpots = [[-8, -10], [12, 8], [-14, 4], [6, -24], [24, 14], [-4, 26]];
+for (const [x, z] of treeSpots) {
+  deco(x, 1.5, z, new THREE.CylinderGeometry(0.4, 0.5, 3, 6), 0x7a5230);
+  deco(x, 4.2, z, new THREE.ConeGeometry(2.2, 4.5, 7), 0x2f8f3f);
+}
+deco(15, 0.6, -4, new THREE.DodecahedronGeometry(1.1), 0x9aa0a6, 0.7);
+deco(-19, 0.5, -8, new THREE.DodecahedronGeometry(0.8), 0x9aa0a6, 2.1);
+
+// ---------- collectibles ----------
+const coins = [];
+function addCoin(x, y, z, red = false) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.12, 16),
+    new THREE.MeshLambertMaterial({ color: red ? 0xff3b30 : 0xffd24d, emissive: red ? 0x551000 : 0x554400 }));
+  m.rotation.z = Math.PI / 2;
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  scene.add(m);
+  coins.push({ mesh: m, red, taken: false });
+}
+// yellow rings
+for (let i = 0; i < 8; i++) addCoin(Math.cos(i / 8 * Math.PI * 2) * 8, 1, Math.sin(i / 8 * Math.PI * 2) * 8);
+for (let i = 0; i < 5; i++) addCoin(18 + i * 1.6, 1 + i * 0.0, -6 + i * 1.2);
+for (let i = 0; i < 4; i++) addCoin(-6 - i * 2, 1, -14 - i * 2);
+for (const [x, y, z] of steps) addCoin(x, y + 1.4, z);
+addCoin(44, 3, 0); addCoin(54, 5, 0);
+// 8 red coins
+[[22, 7.0, -22], [-24, 3.5, -20], [0, 4.5, -28], [10, 3.5, 24],
+ [-22, 14.2, 22], [64, 4.5, 2.5], [34, 2.5, 0], [15, 2.6, -4]]
+  .forEach(([x, y, z]) => addCoin(x, y, z, true));
+
+// ---------- stars ----------
+const starGeo = new THREE.OctahedronGeometry(0.9);
+const stars = [];
+function addStar(x, y, z, hidden = false) {
+  const m = new THREE.Mesh(starGeo, new THREE.MeshLambertMaterial({ color: 0xffe14d, emissive: 0x806a00 }));
+  m.position.set(x, y, z); m.scale.y = 1.3;
+  m.castShadow = true; m.visible = !hidden;
+  scene.add(m);
+  const s = { mesh: m, taken: false, active: !hidden };
+  stars.push(s);
+  return s;
+}
+addStar(22, 7.5, -22);                 // 1: hilltop
+addStar(64, 4.7, 0);                   // 2: end of platform course
+const redStar   = addStar(0, 2.2, 0, true);    // 3: all red coins
+const stompStar = addStar(0, 2.2, 12, true);   // 4: defeat all enemies
+addStar(-22, 14.5, 22);               // 5: tower roof
+
+// ---------- enemies ----------
+const enemies = [];
+function addEnemy(ax, az, bx, bz) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8), mat(0x8a4b2a));
+  body.scale.y = 0.8; body.castShadow = true;
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.14), mat(0xffffff));
+  const eyeR = eyeL.clone();
+  eyeL.position.set(-0.25, 0.25, 0.6); eyeR.position.set(0.25, 0.25, 0.6);
+  g.add(body, eyeL, eyeR);
+  g.position.set(ax, 0.65, az);
+  scene.add(g);
+  enemies.push({ mesh: g, a: new THREE.Vector3(ax, 0.65, az), b: new THREE.Vector3(bx, 0.65, bz), t: Math.random(), dir: 1, dead: false });
+}
+addEnemy(-8, 8, 8, 14);
+addEnemy(10, -14, -6, -8);
+addEnemy(-16, 16, -8, 24);
+addEnemy(24, 2, 16, 10);
+
+// ---------- player ----------
+const player = new THREE.Group();
+{
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.7, 4, 10), mat(0xe2574c));
+  body.position.y = 0.8; body.castShadow = true;
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), mat(0x3450c8));
+  cap.position.y = 1.55; cap.scale.y = 0.6; cap.castShadow = true;
+  const brim = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.4), mat(0x3450c8));
+  brim.position.set(0, 1.5, 0.45);
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.09), mat(0x111111));
+  const eyeR = eyeL.clone();
+  eyeL.position.set(-0.16, 1.25, 0.4); eyeR.position.set(0.16, 1.25, 0.4);
+  player.add(body, cap, brim, eyeL, eyeR);
+}
+scene.add(player);
+
+const SPAWN = new THREE.Vector3(0, 0.1, 6);
+const P = {
+  pos: SPAWN.clone(), vel: new THREE.Vector3(),
+  radius: 0.5, height: 1.8,
+  onGround: false, ground: null, coyote: 0, jumps: 0,
+  hp: 3, lives: 3, coins: 0, reds: 0, starCount: 0,
+  invuln: 0, won: false,
+};
+
+// ---------- input ----------
+const keys = {};
+let started = false;
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Enter' && !started) {
+    started = true;
+    document.getElementById('screen').style.display = 'none';
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    sfx.life();
+  }
+  if (e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+// ---------- HUD ----------
+const $ = id => document.getElementById(id);
+let msgTimer = null;
+function say(text, ms = 2200) {
+  const el = $('msg');
+  el.textContent = text; el.style.opacity = 1;
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => el.style.opacity = 0, ms);
+}
+function hud() {
+  $('stars').innerHTML = '&#9733; ' + P.starCount + ' / 5';
+  $('coins').innerHTML = '&#9679; ' + P.coins + (P.reds ? ' &nbsp;<span style="color:#ff6b5e">&#9679; ' + P.reds + '/8</span>' : '');
+  $('lives').innerHTML = '&#10084; x' + P.lives;
+  $('health').innerHTML = '&#9632;'.repeat(P.hp) + '<span style="opacity:.25">' + '&#9632;'.repeat(Math.max(0, 3 - P.hp)) + '</span>';
+}
+hud();
+
+// ---------- damage / respawn ----------
+function hurt(knock) {
+  if (P.invuln > 0 || P.won) return;
+  P.hp--; P.invuln = 1.5; sfx.hurt();
+  if (knock) { P.vel.copy(knock); P.onGround = false; }
+  if (P.hp <= 0) loseLife();
+  hud();
+}
+function loseLife() {
+  P.lives--;
+  if (P.lives <= 0) {
+    endScreen('GAME OVER', 'The stars remain unclaimed... Press ENTER to try again.');
+    return;
+  }
+  say('Ouch! Lives left: ' + P.lives);
+  P.hp = 3; P.pos.copy(SPAWN); P.vel.set(0, 0, 0); P.invuln = 2;
+  hud();
+}
+function endScreen(title, body) {
+  const sc = $('screen');
+  sc.querySelector('h1').textContent = title;
+  sc.querySelectorAll('p').forEach((p, i) => p.style.display = i === 0 ? '' : 'none');
+  sc.querySelector('p').innerHTML = body;
+  sc.querySelector('.go').style.display = '';
+  sc.style.display = 'flex';
+  started = false;
+  addEventListener('keydown', function once(e) {
+    if (e.code === 'Enter') { removeEventListener('keydown', once); location.reload(); }
+  });
+}
+
+// ---------- camera ----------
+let camYaw = Math.PI;       // behind player facing -z start
+let camDist = 11, camPitch = 0.38;
+const camTarget = new THREE.Vector3();
+
+// ---------- collision helpers ----------
+function collide() {
+  P.ground = null;
+  P.onGround = false;
+  for (const s of solids) {
+    const c = s.mesh.position, h = s.size;
+    const minX = c.x - h.x / 2 - P.radius, maxX = c.x + h.x / 2 + P.radius;
+    const minZ = c.z - h.z / 2 - P.radius, maxZ = c.z + h.z / 2 + P.radius;
+    const top = c.y + h.y / 2, bottom = c.y - h.y / 2;
+    if (P.pos.x < minX || P.pos.x > maxX || P.pos.z < minZ || P.pos.z > maxZ) continue;
+
+    const feet = P.pos.y, head = P.pos.y + P.height;
+    // landing on top
+    if (P.vel.y <= 0 && feet >= top - 0.55 && feet <= top + 0.05) {
+      P.pos.y = top; P.vel.y = 0;
+      P.onGround = true; P.ground = s; P.coyote = 0.12; P.jumps = 0;
+      continue;
+    }
+    // bumping head
+    if (P.vel.y > 0 && head > bottom && head < bottom + 0.4 && feet < bottom) {
+      P.pos.y = bottom - P.height; P.vel.y = 0;
+      continue;
+    }
+    // side push-out (only when vertically overlapping the box)
+    if (feet < top - 0.3 && head > bottom + 0.1) {
+      const dx1 = P.pos.x - minX, dx2 = maxX - P.pos.x;
+      const dz1 = P.pos.z - minZ, dz2 = maxZ - P.pos.z;
+      const m = Math.min(dx1, dx2, dz1, dz2);
+      if (m === dx1) P.pos.x = minX; else if (m === dx2) P.pos.x = maxX;
+      else if (m === dz1) P.pos.z = minZ; else P.pos.z = maxZ;
+    }
+  }
+}
+
+// ---------- main loop ----------
+let t = 0;
+const clock = new THREE.Clock();
+const tmp = new THREE.Vector3();
+
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (started && !P.won) t += dt;
+
+  // spin collectibles
+  for (const c of coins) if (!c.taken) c.mesh.rotation.y += dt * 4;
+  for (const s of stars) if (!s.taken && s.active) {
+    s.mesh.rotation.y += dt * 2;
+    s.mesh.position.y += Math.sin(t * 3 + s.mesh.position.x) * dt * 0.15;
+  }
+
+  if (started) {
+    // camera rotate
+    const rot = (keys.KeyQ || keys.ArrowLeft ? 1 : 0) - (keys.KeyE || keys.ArrowRight ? 1 : 0);
+    camYaw += rot * dt * 2.4;
+
+    // movement (camera-relative)
+    const f = new THREE.Vector3(Math.sin(camYaw), 0, Math.cos(camYaw));
+    const r = new THREE.Vector3(f.z, 0, -f.x);
+    tmp.set(0, 0, 0);
+    if (keys.KeyW) tmp.add(f);
+    if (keys.KeyS) tmp.sub(f);
+    if (keys.KeyA) tmp.add(r);
+    if (keys.KeyD) tmp.sub(r);
+    const wish = tmp.lengthSq() > 0 ? tmp.normalize() : tmp;
+    const speed = 8.5, accel = P.onGround ? 40 : 18;
+    P.vel.x += (wish.x * speed - P.vel.x) * Math.min(1, accel * dt / speed);
+    P.vel.z += (wish.z * speed - P.vel.z) * Math.min(1, accel * dt / speed);
+    if (wish.lengthSq() > 0) {
+      player.rotation.y = Math.atan2(P.vel.x, P.vel.z);
+    }
+
+    // jumping: coyote time + double jump
+    if (keys.Space && !P.jumpHeld) {
+      if (P.onGround || P.coyote > 0) {
+        P.vel.y = 11; P.jumps = 1; P.coyote = 0; P.onGround = false; sfx.jump();
+      } else if (P.jumps === 1) {
+        P.vel.y = 9.5; P.jumps = 2; beep(420, 0.15, 'square', 0.12, 300);
+      }
+    }
+    P.jumpHeld = !!keys.Space;
+    if (!keys.Space && P.vel.y > 4) P.vel.y = 4;   // variable jump height
+
+    // gravity
+    P.vel.y -= 26 * dt;
+    P.vel.y = Math.max(P.vel.y, -30);
+    P.coyote -= dt;
+    P.invuln = Math.max(0, P.invuln - dt);
+
+    // move moving platforms and carry the player
+    for (const s of solids) if (s.moving) {
+      s.prev.copy(s.mesh.position);
+      s.moving(s.mesh.position);
+      if (P.ground === s) P.pos.add(tmp.copy(s.mesh.position).sub(s.prev));
+    }
+
+    P.pos.addScaledVector(P.vel, dt);
+    collide();
+
+    // fell in the sea
+    if (P.pos.y < -6) {
+      hurt();
+      if (P.hp > 0) { P.pos.copy(SPAWN); P.vel.set(0, 0, 0); say('Splash!'); }
+    }
+
+    // coins
+    for (const c of coins) {
+      if (c.taken) continue;
+      if (c.mesh.position.distanceToSquared(tmp.copy(P.pos).setY(P.pos.y + 0.8)) < 1.6) {
+        c.taken = true; c.mesh.visible = false;
+        if (c.red) {
+          P.reds++; sfx.red();
+          say('RED COIN! ' + P.reds + ' / 8', 1400);
+          if (P.reds === 8) {
+            redStar.active = true; redStar.mesh.visible = true;
+            say('A star appeared at the island center!', 3000);
+            sfx.life();
+          }
+        } else {
+          P.coins++; sfx.coin();
+          if (P.hp < 3) { P.hp++; }
+          if (P.coins % 50 === 0) { P.lives++; sfx.life(); say('EXTRA LIFE!'); }
+        }
+        hud();
+      }
+    }
+
+    // enemies
+    let alive = 0;
+    for (const e of enemies) {
+      if (e.dead) continue;
+      alive++;
+      e.t += dt * 0.25 * e.dir;
+      if (e.t > 1) { e.t = 1; e.dir = -1; }
+      if (e.t < 0) { e.t = 0; e.dir = 1; }
+      e.mesh.position.lerpVectors(e.a, e.b, e.t);
+      e.mesh.lookAt(tmp.lerpVectors(e.a, e.b, e.t + e.dir * 0.01).setY(e.mesh.position.y));
+      const d2 = e.mesh.position.distanceToSquared(tmp.copy(P.pos).setY(P.pos.y + 0.5));
+      if (d2 < 1.7) {
+        if (P.vel.y < -2 && P.pos.y > e.mesh.position.y + 0.3) {
+          e.dead = true; e.mesh.visible = false; P.vel.y = 9; sfx.stomp();
+          say('Squish!', 900);
+          alive--;
+        } else {
+          hurt(tmp.copy(P.pos).sub(e.mesh.position).setY(0).normalize().multiplyScalar(7).setY(6));
+        }
+      }
+    }
+    if (alive === 0 && !stompStar.active && !stompStar.taken) {
+      stompStar.active = true; stompStar.mesh.visible = true;
+      say('All enemies squished! A star appeared!', 3000);
+      sfx.life();
+    }
+
+    // stars
+    for (const s of stars) {
+      if (s.taken || !s.active) continue;
+      if (s.mesh.position.distanceToSquared(tmp.copy(P.pos).setY(P.pos.y + 0.9)) < 2.6) {
+        s.taken = true; s.mesh.visible = false;
+        P.starCount++; sfx.star();
+        say('★ POWER STAR GET! ★', 2600);
+        hud();
+        if (P.starCount === 5) {
+          P.won = true;
+          setTimeout(() => endScreen('YOU WIN!',
+            'All 5 Power Stars collected with ' + P.coins + ' coins and ' + P.lives + ' lives to spare!<br>Scamper Isle is saved. Press ENTER to play again.'), 1200);
+        }
+      }
+    }
+
+    // blink when invulnerable
+    player.visible = P.invuln <= 0 || Math.floor(P.invuln * 12) % 2 === 0;
+    player.position.copy(P.pos);
+  }
+
+  // chase camera
+  camTarget.lerp(tmp.copy(P.pos).add(new THREE.Vector3(0, 1.6, 0)), 1 - Math.pow(0.001, dt));
+  camera.position.set(
+    camTarget.x - Math.sin(camYaw) * camDist * Math.cos(camPitch),
+    camTarget.y + camDist * Math.sin(camPitch),
+    camTarget.z - Math.cos(camYaw) * camDist * Math.cos(camPitch)
+  );
+  camera.lookAt(camTarget);
+
+  renderer.render(scene, camera);
+}
+tick();
+</script>
+</body>
+</html>
